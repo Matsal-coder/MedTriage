@@ -10,7 +10,13 @@ automação de pipelines, observabilidade e otimização de latência.
 
 Em desenvolvimento.
 
-Atualmente o projeto está na etapa de fundação técnica.
+Atualmente o projeto possui:
+- fundação técnica em Python;
+- gerenciamento de dependências com Poetry;
+- validações com pytest e Ruff;
+- API mínima com FastAPI;
+- endpoint `GET /health`;
+- suporte inicial a execução em Docker.
 
 ## Stack planejada
 
@@ -33,11 +39,17 @@ src/
 └── medtriage/
     ├── __init__.py
     ├── config.py
-    └── logging.py
+    ├── logging.py
+    └── api/
+        ├── __init__.py
+        ├── app.py
+        └── schemas.py
 
 tests/
-└── unit/
-    └── test_config.py
+├── unit/
+│   └── test_config.py
+└── integration/
+    └── test_health.py
 ```
 
 ## Desenvolvimento
@@ -67,3 +79,58 @@ Verifique a formatação:
 ```bash
 poetry run ruff format --check .
 ```
+
+## API
+
+Execute a aplicação localmente com:
+
+```bash
+poetry run uvicorn medtriage.api.app:app --app-dir src --host 127.0.0.1 --port 8000
+```
+
+Com a API em execução, valide o endpoint de saúde:
+
+```bash
+curl http://127.0.0.1:8000/health
+```
+
+Resposta esperada:
+
+```json
+{"status":"ok"}
+```
+
+A documentação interativa gerada pelo FastAPI fica disponível em:
+
+```text
+http://127.0.0.1:8000/docs
+```
+
+## Docker
+
+Construa a imagem:
+
+```bash
+docker build -t medtriage-mlops .
+```
+
+Execute o container:
+
+```bash
+docker run --rm -p 8000:8000 --name medtriage-api medtriage-mlops
+```
+
+Com o container em execução, verifique:
+
+```bash
+curl http://127.0.0.1:8000/health
+```
+
+Resposta esperada:
+
+```json
+{"status":"ok"}
+```
+
+A imagem é construída apenas com as dependências de runtime e executa a API
+como usuário não-root.
