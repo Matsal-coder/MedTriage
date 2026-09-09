@@ -1,0 +1,1 @@
+"""MedTriage API package."""
