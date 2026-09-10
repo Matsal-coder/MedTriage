@@ -19,6 +19,9 @@ RUN poetry install \
 
 COPY src ./src
 
+COPY artifacts/models/baseline_pipeline.joblib \
+    ./artifacts/models/baseline_pipeline.joblib
+
 RUN useradd --create-home --shell /usr/sbin/nologin appuser \
     && chown -R appuser:appuser /app
 

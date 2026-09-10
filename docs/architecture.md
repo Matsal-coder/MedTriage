@@ -2,501 +2,506 @@
 
 ## 1. Objetivo do sistema
 
-O MedTriage MLOps é um projeto acadêmico voltado à construção de uma solução de
-classificação de urgência em textos médicos.
+O MedTriage MLOps é um projeto acadêmico voltado à construção de uma solução de classificação de urgência em textos médicos.
 
-O objetivo final é receber um texto ou laudo e classificá-lo em uma categoria de
-urgência, por exemplo:
+O objetivo final é receber um texto ou laudo e classificá-lo em uma categoria acadêmica de triagem:
 
-- normal;
-- atenção;
-- urgente.
+- `normal`;
+- `attention`;
+- `urgent`.
 
-A solução completa deverá contemplar não apenas o modelo de Machine Learning,
-mas também os componentes necessários para disponibilização, automação,
-observabilidade e otimização da inferência.
+IMPORTANTE:
+Essas classes são uma proxy criada para o Tech Challenge a partir das categorias originais do Medical Abstracts TC Corpus. O sistema não representa uma solução clínica validada.
+
+A solução completa contempla não apenas Machine Learning, mas também API, containerização, automação, observabilidade e otimização de inferência.
 
 ## 2. Estado atual da arquitetura
 
-Ao final do BLOCO 1, o projeto possui uma fundação mínima e funcional formada por:
+Ao final do BLOCO 2, a arquitetura real implementada é:
 
 ```text
-Docker
-  ↓
-Uvicorn
-  ↓
-FastAPI
-  ↓
-GET /health
+Medical Abstracts TC Corpus
+          ↓
+      data/loader.py
+          ↓
+   data/validation.py
+          ↓
+   target acadêmico
+          ↓
+ train / validation / test
+          ↓
+ TfidfVectorizer
+          +
+ LogisticRegression
+          ↓
+ baseline_pipeline.joblib
+      ↙            ↘
+evaluate.py      predict.py
+    ↓                ↓
+evaluation.json   FastAPI
+                    ↓
+               POST /predict
+                    ↓
+               Docker runtime
+
+baseline_pipeline.joblib
+          ↓
+benchmarking/latency.py
+          ↓
+baseline_latency.json
 ```
 
-Os componentes implementados até este estágio são:
-
-- estrutura de pacote Python em layout `src/`;
-- configuração centralizada básica;
-- logging básico;
-- FastAPI;
-- endpoint de health check;
-- testes automatizados;
-- Dockerfile;
-- execução não-root no container.
-
-Nenhum modelo de Machine Learning está carregado neste momento.
+O `GET /health` herdado do Bloco 1 permanece preservado.
 
 ## 3. Arquitetura alvo do projeto
 
-A arquitetura global planejada é:
-
 ```text
 Dataset
-   ↓
+ ↓
 Airflow
-   ↓
+ ↓
 Treinamento
-   ↓
+ ↓
 Modelo
-   ↓
+ ↓
 Scikit-learn / ONNX
-   ↓
+ ↓
 FastAPI
-   ↓
+ ↓
 Docker
-   ↓
+ ↓
 /predict | /health | /metrics
-                         ↓
-                    Prometheus
-                         ↓
-                      Grafana
+                      ↓
+                  Prometheus
+                      ↓
+                    Grafana
 ```
 
-GitHub Actions atuará de forma transversal no repositório para validar:
+GitHub Actions atuará transversalmente:
 
 ```text
 Git push / Pull Request
           ↓
      GitHub Actions
           ↓
-       Ruff
+        Ruff
           ↓
-       pytest
+        pytest
           ↓
-    Docker build
+     Docker build
 ```
 
-Essa é a arquitetura alvo. Os componentes ainda não implementados serão
-adicionados somente nos blocos correspondentes.
+Os componentes ainda não implementados permanecem reservados aos blocos seguintes.
 
-## 4. Componentes atuais
+## 4. Dataset e camada de dados
 
-### 4.1 `src/medtriage/config.py`
+### Dataset
 
-Centraliza configurações básicas da aplicação.
+Foi adotado o Medical Abstracts Text Classification Corpus.
 
-No Bloco 1 contém valores como:
+Arquivos principais:
 
-- nome da aplicação;
-- versão;
-- nível padrão de logging.
+```text
+medical_tc_train.csv
+medical_tc_test.csv
+medical_tc_labels.csv
+```
 
-O objetivo é impedir que constantes centrais sejam duplicadas em diferentes
-partes do projeto.
+Os arquivos são mantidos localmente em:
 
-Nos próximos blocos poderá evoluir para receber configurações relacionadas a
-caminhos de artefatos, parâmetros e ambiente.
+```text
+data/raw/
+```
 
-### 4.2 `src/medtriage/logging.py`
+e ignorados pelo Git.
 
-Centraliza a inicialização do logging da aplicação.
+### Contrato original
 
-A implementação utiliza a biblioteca padrão `logging`, evitando dependências
-adicionais nesta fase.
+Colunas utilizadas:
 
-O logging atual é deliberadamente simples. Logging estruturado, correlação de
-requisições e integrações externas não fazem parte do Bloco 1.
+```text
+medical_abstract
+condition_label
+```
 
-### 4.3 `src/medtriage/api/app.py`
+Labels originais:
 
-É o entrypoint atual da aplicação FastAPI.
+```text
+1 -> Neoplasms
+2 -> Digestive system diseases
+3 -> Nervous system diseases
+4 -> Cardiovascular diseases
+5 -> General pathological conditions
+```
 
-Responsabilidades atuais:
+### Proxy acadêmica
 
-- instanciar a aplicação;
-- consumir nome e versão da configuração;
-- inicializar logging;
-- registrar `GET /health`.
+O projeto adiciona:
 
-O objeto exposto é:
+```text
+triage_label
+```
+
+através do mapeamento:
+
+```text
+1 -> urgent
+2 -> attention
+3 -> attention
+4 -> urgent
+5 -> normal
+```
+
+`condition_label` é preservado.
+
+Esse mapeamento é uma simplificação acadêmica e não um protocolo clínico.
+
+## 5. `src/medtriage/data/loader.py`
+
+Responsabilidades:
+
+- carregar CSV;
+- chamar validação;
+- preservar colunas originais;
+- normalizar whitespace no texto;
+- adicionar `triage_label`;
+- realizar split reproduzível.
+
+Funções principais:
+
+```text
+load_dataset()
+add_triage_labels()
+split_training_data()
+```
+
+## 6. `src/medtriage/data/validation.py`
+
+Responsabilidades:
+
+- rejeitar dataset vazio;
+- validar colunas obrigatórias;
+- rejeitar nulls;
+- rejeitar abstracts vazios;
+- validar labels originais.
+
+O objetivo é manter validação separada de transformação.
+
+## 7. Split dos dados
+
+O corpus possui:
+
+```text
+11.550 treino oficial
+2.888 teste oficial
+```
+
+O treino oficial é dividido em:
+
+```text
+80% treino
+20% validação
+```
+
+com:
+
+```text
+random_state = 837
+```
+
+e estratificação por `triage_label`.
+
+O conjunto de teste oficial permanece reservado para avaliação final.
+
+## 8. Configuração centralizada
+
+`src/medtriage/config.py` concentra os valores globais.
+
+Principais grupos:
+
+### Aplicação
+
+```text
+APP_NAME
+APP_VERSION
+DEFAULT_LOG_LEVEL
+```
+
+### Reprodutibilidade
+
+```text
+RANDOM_SEED = 837
+VALIDATION_SIZE = 0.20
+```
+
+### Dados
+
+```text
+DATA_DIR
+RAW_DATA_DIR
+PROCESSED_DATA_DIR
+TRAIN_DATA_PATH
+TEST_DATA_PATH
+TEXT_COLUMN
+ORIGINAL_TARGET_COLUMN
+TRIAGE_TARGET_COLUMN
+```
+
+### Artefatos
+
+```text
+ARTIFACTS_DIR
+MODELS_DIR
+MODEL_ARTIFACT_PATH
+EVALUATION_ARTIFACT_PATH
+BENCHMARKS_DIR
+BASELINE_BENCHMARK_PATH
+```
+
+### Modelo
+
+```text
+TFIDF_NGRAM_RANGE
+TFIDF_MIN_DF
+TFIDF_MAX_DF
+LOGISTIC_REGRESSION_MAX_ITER
+TRIAGE_CLASSES
+```
+
+### Benchmark
+
+```text
+BENCHMARK_WARMUP_RUNS
+BENCHMARK_MEASURED_RUNS
+```
+
+A centralização evita duplicação de seed, paths, nomes de colunas e nomes de artefatos.
+
+## 9. Modelo baseline
+
+O baseline utiliza:
+
+```text
+TfidfVectorizer
++
+LogisticRegression
+```
+
+dentro de:
+
+```text
+sklearn.pipeline.Pipeline
+```
+
+Parâmetros:
+
+```text
+ngram_range = (1, 2)
+min_df = 2
+max_df = 0.95
+lowercase = True
+max_iter = 1000
+random_state = 837
+```
+
+O pipeline único reduz risco de inconsistência entre treino e inferência.
+
+## 10. `src/medtriage/modeling/train.py`
+
+Responsabilidades:
+
+- construir pipeline;
+- treinar modelo;
+- persistir artefato;
+- oferecer função reutilizável de treinamento;
+- expor comando CLI.
+
+Funções:
+
+```text
+build_model_pipeline()
+train_model()
+persist_model()
+run_training()
+main()
+```
+
+Fluxo:
+
+```text
+medical_tc_train.csv
+ ↓
+load_dataset
+ ↓
+add_triage_labels
+ ↓
+split_training_data
+ ↓
+train_model
+ ↓
+persist_model
+ ↓
+baseline_pipeline.joblib
+```
+
+O `run_training()` foi mantido reutilizável para que o Airflow no Bloco 3 possa orquestrar o treino sem duplicar lógica dentro da DAG.
+
+## 11. Persistência do modelo
+
+Artefato principal:
+
+```text
+artifacts/models/baseline_pipeline.joblib
+```
+
+Formato:
+
+```text
+Joblib
+```
+
+Conteúdo:
+
+```text
+TF-IDF
++
+LogisticRegression
+```
+
+persistidos juntos.
+
+Vantagens:
+
+- contrato único;
+- menor risco de incompatibilidade;
+- carregamento simples;
+- facilidade de uso na API;
+- futura referência para conversão/otimização.
+
+## 12. `src/medtriage/modeling/evaluate.py`
+
+Responsabilidades:
+
+- carregar modelo persistido;
+- reconstruir validation set reproduzível;
+- carregar test set oficial;
+- calcular métricas;
+- persistir avaliação.
+
+Fluxo:
+
+```text
+baseline_pipeline.joblib
+      ↓
+validation set
+      +
+test set
+      ↓
+evaluate_model()
+      ↓
+calculate_metrics()
+      ↓
+evaluation.json
+```
+
+Métricas:
+
+- accuracy;
+- precision macro;
+- recall macro;
+- F1 macro;
+- F1 weighted;
+- métricas por classe;
+- recall de `urgent`;
+- matriz de confusão.
+
+Artefato:
+
+```text
+artifacts/models/evaluation.json
+```
+
+## 13. Resultados do modelo
+
+### Validação
+
+```text
+samples           2310
+accuracy          0.5632
+precision_macro   0.5351
+recall_macro      0.5273
+f1_macro          0.5284
+f1_weighted       0.5558
+urgent_recall     0.7505
+```
+
+### Teste
+
+```text
+samples           2888
+accuracy          0.5765
+precision_macro   0.5524
+recall_macro      0.5447
+f1_macro          0.5457
+f1_weighted       0.5684
+urgent_recall     0.7675
+```
+
+Os resultados próximos entre validação e teste indicam comportamento consistente entre os conjuntos.
+
+## 14. `src/medtriage/modeling/predict.py`
+
+`PredictionService` encapsula:
+
+- caminho do modelo;
+- carregamento;
+- inferência;
+- probabilidades;
+- medição de tempo.
+
+Fluxo:
+
+```text
+PredictionService()
+ ↓
+load()
+ ↓
+joblib.load()
+ ↓
+modelo em memória
+ ↓
+predict(text)
+```
+
+O artefato não é recarregado a cada request.
+
+## 15. API FastAPI
+
+Entry point preservado:
 
 ```text
 medtriage.api.app:app
 ```
 
-Esse contrato será utilizado por Uvicorn e Docker e não deve ser quebrado sem
-necessidade.
+### Lifespan
 
-No Bloco 2, esse módulo deverá evoluir para registrar a rota de inferência.
-
-### 4.4 `src/medtriage/api/schemas.py`
-
-Contém contratos de entrada e saída da API.
-
-No Bloco 1 existe apenas o schema de resposta do health check.
-
-No Bloco 2 deverão ser adicionados os schemas necessários à inferência,
-preferencialmente sem misturar lógica de modelo com definição de contratos HTTP.
-
-### 4.5 `GET /health`
-
-O endpoint:
+Fluxo:
 
 ```text
-GET /health
+FastAPI startup
+ ↓
+create_prediction_service()
+ ↓
+PredictionService.load()
+ ↓
+modelo residente em memória
 ```
 
-retorna:
+Essa estratégia evita acesso a disco em cada request.
 
-```json
-{"status":"ok"}
-```
+## 16. `GET /health`
 
-Sua finalidade é indicar que o processo da API está ativo e acessível.
-
-No Bloco 1 ele não verifica disponibilidade de modelo, dataset ou dependências
-externas, pois esses componentes ainda não existem.
-
-### 4.6 Docker
-
-A aplicação é empacotada em imagem baseada em:
-
-```text
-python:3.12.2-slim
-```
-
-O container:
-
-- instala Poetry;
-- utiliza `poetry.lock`;
-- instala apenas dependências principais;
-- copia `src/`;
-- executa Uvicorn;
-- expõe a porta 8000;
-- roda como `appuser`, sem privilégios de root.
-
-O entrypoint lógico do runtime é:
-
-```text
-Docker
-  ↓
-uvicorn
-  ↓
-medtriage.api.app:app
-```
-
-## 5. Fluxo atual
-
-O fluxo real existente ao final do Bloco 1 é:
-
-```text
-Cliente
-  ↓
-HTTP :8000
-  ↓
-Docker
-  ↓
-Uvicorn
-  ↓
-src/medtriage/api/app.py
-  ↓
-GET /health
-  ↓
-HealthResponse
-```
-
-A configuração e o logging são carregados durante a inicialização da aplicação:
-
-```text
-config.py ────────┐
-                  ↓
-              api/app.py
-                  ↑
-logging.py ───────┘
-```
-
-## 6. Evolução prevista
-
-### Bloco 2 — Dataset, NLP e modelo
-
-O Bloco 2 deverá introduzir:
-
-- dataset definitivo;
-- validação e carregamento dos dados;
-- preprocessing NLP;
-- treinamento;
-- avaliação;
-- persistência do modelo;
-- carregamento do artefato;
-- endpoint `/predict`;
-- benchmark baseline de latência.
-
-A FastAPI existente deve ser reutilizada, não substituída.
-
-### Bloco 3 — CI/CD e Airflow
-
-O Bloco 3 deverá introduzir:
-
-- workflows do GitHub Actions;
-- lint automatizado;
-- testes automatizados;
-- build automatizado;
-- DAGs do Airflow;
-- pipeline de treinamento e/ou automação prevista no desafio.
-
-### Bloco 4 — Observabilidade
-
-O Bloco 4 deverá introduzir:
-
-- Prometheus;
-- endpoint `/metrics`;
-- métricas de aplicação;
-- métricas relacionadas à inferência;
-- Grafana;
-- dashboards.
-
-### Bloco 5 — Otimização
-
-O Bloco 5 deverá introduzir:
-
-- exportação ou conversão para ONNX;
-- benchmark do modelo otimizado;
-- comparação entre baseline e versão otimizada;
-- documentação consolidada;
-- material para apresentação e vídeo STAR.
-
-## 7. Decisão de inferência
-
-### Batch
-
-Inferência em batch é adequada quando um conjunto de registros pode ser processado
-de forma assíncrona ou periódica.
-
-No contexto deste projeto, batch pode ser útil para:
-
-- reprocessar textos históricos;
-- gerar previsões offline;
-- preparar avaliações;
-- executar pipelines de treinamento;
-- realizar tarefas periódicas.
-
-### Real-time
-
-Na operação principal do sistema, um texto médico é submetido para triagem e o
-resultado precisa estar disponível imediatamente.
-
-Esse comportamento se encaixa melhor em inferência síncrona, exposta através de
-API REST.
-
-Fluxo esperado:
-
-```text
-Texto
-  ↓
-POST /predict
-  ↓
-Modelo
-  ↓
-Classificação
-  ↓
-Resposta HTTP
-```
-
-### Escolha
-
-A arquitetura principal será real-time.
-
-Batch permanece como estratégia complementar para pipelines e processamento
-offline.
-
-## 8. Estratégia de cloud
-
-A recomendação arquitetural é executar a API em um serviço gerenciado de
-containers.
-
-O padrão desejado é:
-
-```text
-Imagem Docker
-     ↓
-Serviço de containers
-     ↓
-Endpoint HTTP
-     ↓
-Autoscaling
-```
-
-### Serviço de referência
-
-Como referência arquitetural, considera-se o Google Cloud Run.
-
-A escolha se deve principalmente a:
-
-- execução direta de containers;
-- suporte nativo a HTTP;
-- escalabilidade gerenciada;
-- baixa necessidade de administração de infraestrutura;
-- boa adequação a uma API stateless;
-- simplicidade compatível com o escopo acadêmico do Tech Challenge.
-
-O projeto não depende tecnicamente do Cloud Run.
-
-Serviços equivalentes poderiam hospedar a mesma imagem, como:
-
-- Azure Container Apps;
-- AWS App Runner;
-- AWS ECS/Fargate.
-
-Não há implementação real de cloud no Bloco 1.
-
-## 9. Portabilidade com Docker
-
-Docker estabelece uma fronteira clara entre a aplicação e a infraestrutura.
-
-A mesma imagem conceitualmente pode ser executada:
-
-```text
-Notebook local
-     │
-     ├── Docker Desktop
-     │
-     ├── Cloud Run
-     │
-     ├── Azure Container Apps
-     │
-     └── ECS/Fargate
-```
-
-Isso reduz diferenças entre ambientes e evita acoplamento desnecessário ao
-provedor de cloud.
-
-## 10. Decisões arquiteturais do Bloco 1
-
-### Python
-
-Decisão:
-
-```text
-Python 3.12.2
-```
-
-Motivo:
-
-- versão moderna;
-- compatibilidade com a stack escolhida;
-- alinhamento entre ambiente local e Docker.
-
-### Gerenciamento de dependências
-
-Decisão:
-
-```text
-Poetry
-```
-
-Motivo:
-
-- centralização em `pyproject.toml`;
-- lockfile;
-- grupos de dependências;
-- reprodutibilidade.
-
-### Layout de pacote
-
-Decisão:
-
-```text
-src/medtriage/
-```
-
-Motivo:
-
-- separação clara entre código e raiz;
-- melhor comportamento de imports;
-- estrutura preparada para expansão.
-
-### Qualidade
-
-Decisão:
-
-```text
-pytest + Ruff
-```
-
-Motivo:
-
-- ferramentas simples;
-- boa integração;
-- baixo overhead;
-- Ruff cobre lint e formatação.
-
-### Configuração
-
-Decisão:
-
-```text
-config.py simples
-```
-
-Não foi adicionado um framework de settings no Bloco 1 porque ainda não existem
-configurações externas suficientes para justificar essa camada.
-
-### Logging
-
-Decisão:
-
-```text
-logging da biblioteca padrão
-```
-
-Motivo:
-
-- nenhuma dependência adicional;
-- suficiente para o estágio atual.
-
-### API
-
-Decisão:
-
-```text
-FastAPI + Uvicorn
-```
-
-Motivo:
-
-- interface HTTP adequada a inferência;
-- tipagem e schemas;
-- documentação OpenAPI automática;
-- baixo custo de implementação.
-
-### Docker
-
-Decisão:
-
-```text
-python:3.12.2-slim
-```
-
-com instalação somente das dependências de runtime e execução por usuário não-root.
-
-## 11. Contratos que não devem ser quebrados sem necessidade
-
-Os próximos blocos devem preservar, salvo justificativa técnica:
-
-### Entry point
-
-```text
-medtriage.api.app:app
-```
-
-### Health check
+Contrato preservado:
 
 ```text
 GET /health
@@ -508,47 +513,354 @@ Resposta mínima:
 {"status":"ok"}
 ```
 
-### Layout Python
+## 17. `POST /predict`
 
-```text
-src/medtriage/
+Request:
+
+```json
+{
+  "text": "Patient presents with..."
+}
 ```
 
-Novos módulos devem preferencialmente ser adicionados dentro deste namespace.
+Response:
 
-### Configuração centralizada
+```json
+{
+  "prediction": "urgent",
+  "probabilities": {
+    "attention": 0.1,
+    "normal": 0.2,
+    "urgent": 0.7
+  },
+  "inference_time_ms": 2.0
+}
+```
 
-Valores globais não devem ser espalhados em arquivos diferentes se pertencem à
-configuração da aplicação.
+Entradas vazias ou apenas whitespace são rejeitadas com HTTP 422.
 
-### Testes
+## 18. Schemas
 
-Toda nova funcionalidade com comportamento verificável deve ser acompanhada por
-teste adequado.
-
-### Docker
-
-O container deve permanecer executável sem privilégios de root, salvo necessidade
-técnica devidamente documentada.
-
-## 12. Limites atuais
-
-O Bloco 1 estabelece apenas a fundação.
-
-Não existe neste estágio:
+`src/medtriage/api/schemas.py` contém:
 
 ```text
+HealthResponse
+PredictionRequest
+PredictionResponse
+```
+
+Os contratos HTTP permanecem separados da lógica de ML.
+
+## 19. Benchmark de latência
+
+Arquivo:
+
+```text
+src/medtriage/benchmarking/latency.py
+```
+
+Responsabilidades:
+
+- carregar `PredictionService`;
+- warm-up;
+- inferências medidas;
+- estatísticas;
+- persistência.
+
+Metodologia:
+
+```text
+20 warm-ups
+500 medições
+5 inputs fixos
+```
+
+Métricas:
+
+```text
+mean
+p50
+p95
+min
+max
+throughput
+```
+
+Resultado obtido:
+
+```text
+mean       2.2997 ms
+p50        2.2074 ms
+p95        2.8114 ms
+min        1.8789 ms
+max        4.0201 ms
+throughput 434.84 req/s
+```
+
+Escopo:
+
+```text
+model_inference
+```
+
+Portanto, não representa latência HTTP end-to-end.
+
+Artefato:
+
+```text
+artifacts/benchmarks/baseline_latency.json
+```
+
+## 20. Docker
+
+Base:
+
+```text
+python:3.12.2-slim
+```
+
+Usuário:
+
+```text
+appuser
+```
+
+Arquivos necessários ao runtime:
+
+```text
+src/
+artifacts/models/baseline_pipeline.joblib
+```
+
+O modelo é incorporado durante o `docker build`.
+
+Fluxo:
+
+```text
+artefato local
+ ↓
+docker build
+ ↓
+COPY baseline_pipeline.joblib
+ ↓
+imagem Docker
+ ↓
+Uvicorn
+ ↓
+FastAPI lifespan
+ ↓
+PredictionService.load()
+```
+
+Smoke tests validados:
+
+```text
+GET /health
 POST /predict
-modelo treinado
-dataset
-pipeline de treinamento
+docker exec ... whoami
+presença do joblib dentro do container
+```
+
+O container continua rodando sem privilégios de root.
+
+## 21. Artefatos
+
+```text
+artifacts/
+├── models/
+│   ├── baseline_pipeline.joblib
+│   └── evaluation.json
+└── benchmarks/
+    └── baseline_latency.json
+```
+
+Eles são ignorados pelo Git.
+
+## 22. Testes
+
+A suíte cobre:
+
+### Dados
+
+- dataset válido;
+- dataset vazio;
+- coluna ausente;
+- texto nulo;
+- texto vazio;
+- label inválido;
+- pipeline de preparação;
+- reprodutibilidade do split.
+
+### Treinamento
+
+- construção do pipeline;
+- treinamento;
+- persistência;
+- reload;
+- pipeline completo.
+
+### Avaliação
+
+- contrato de métricas;
+- scores perfeitos;
+- persistência;
+- workflow completo.
+
+### Predição
+
+- carregamento;
+- predição;
+- probabilidades;
+- ausência de artefato;
+- modelo não carregado.
+
+### API
+
+- import;
+- `/health`;
+- `/predict`;
+- entradas inválidas.
+
+### Benchmark
+
+- percentile;
+- estatísticas;
+- erros para dados vazios;
+- persistência.
+
+## 23. Fluxo de treinamento
+
+```text
+Medical Abstracts train CSV
+          ↓
+       loader
+          ↓
+      validation
+          ↓
+ target acadêmico
+          ↓
+ split reproduzível
+          ↓
+      train data
+          ↓
+       TF-IDF
+          ↓
+Logistic Regression
+          ↓
+baseline_pipeline.joblib
+```
+
+## 24. Fluxo de avaliação
+
+```text
+baseline_pipeline.joblib
+        ↓
+validation set + test set
+        ↓
+predict
+        ↓
+metrics
+        ↓
+evaluation.json
+```
+
+## 25. Fluxo de inferência
+
+```text
+Cliente
+ ↓
+HTTP
+ ↓
+FastAPI
+ ↓
+PredictionService
+ ↓
+pipeline carregado em memória
+ ↓
+TF-IDF
+ ↓
+Logistic Regression
+ ↓
+prediction
+ ↓
+probabilities
+ ↓
+inference_time_ms
+ ↓
+Response
+```
+
+## 26. Integração futura com Airflow
+
+O Bloco 3 não deve reimplementar treinamento dentro da DAG.
+
+A DAG deve reutilizar funções existentes, especialmente:
+
+```text
+run_training()
+run_evaluation()
+```
+
+A responsabilidade do Airflow será orquestrar essas etapas, não conter a lógica de modelagem.
+
+## 27. Integração futura com GitHub Actions
+
+O CI deverá executar pelo menos:
+
+```bash
+poetry install
+poetry run pytest
+poetry run ruff check .
+poetry run ruff format --check .
+docker build ...
+```
+
+A estratégia concreta para disponibilizar o modelo antes do build deverá ser definida no Bloco 3.
+
+## 28. Integração futura com ONNX
+
+O Bloco 5 deverá preservar, para comparação justa:
+
+- mesmos inputs;
+- mesmo tipo de latência;
+- mesmo warm-up;
+- mesmo número de execuções;
+- mesmo ambiente sempre que possível.
+
+Baseline oficial:
+
+```text
+mean       2.2997 ms
+p50        2.2074 ms
+p95        2.8114 ms
+throughput 434.84 req/s
+```
+
+O contrato HTTP idealmente deve permanecer estável mesmo que o backend de inferência seja trocado.
+
+## 29. Estratégia de cloud
+
+Google Cloud Run permanece como referência arquitetural teórica.
+
+A aplicação não depende especificamente do Cloud Run e pode ser executada em serviços equivalentes.
+
+Não existe deploy real em cloud no Bloco 2.
+
+## 30. Limites atuais
+
+Ainda não existem:
+
+```text
 Airflow
-CI/CD
+DAG
+GitHub Actions
 Prometheus
 Grafana
+/metrics
 ONNX
-benchmark
+quantização
+benchmark comparativo
+vídeo STAR
 ```
 
-Essas ausências são deliberadas e fazem parte da divisão arquitetural do projeto,
-não representam falhas do Bloco 1.
+Essas ausências são deliberadas e pertencem aos próximos blocos.
