@@ -4,6 +4,7 @@ from medtriage.config import (
     APP_NAME,
     APP_VERSION,
     DEFAULT_LOG_LEVEL,
+    EVALUATION_ARTIFACT_FILENAME,
     LOGISTIC_REGRESSION_MAX_ITER,
     MODEL_ARTIFACT_FILENAME,
     ORIGINAL_TARGET_COLUMN,
@@ -14,6 +15,7 @@ from medtriage.config import (
     TFIDF_MIN_DF,
     TFIDF_NGRAM_RANGE,
     TRAIN_DATA_FILENAME,
+    TRIAGE_CLASSES,
     TRIAGE_TARGET_COLUMN,
     VALIDATION_SIZE,
 )
@@ -32,6 +34,8 @@ def test_model_configuration() -> None:
     assert TFIDF_MIN_DF == EXPECTED_TFIDF_MIN_DF
     assert TFIDF_MAX_DF == EXPECTED_TFIDF_MAX_DF
     assert LOGISTIC_REGRESSION_MAX_ITER == EXPECTED_MAX_ITER
+    assert EVALUATION_ARTIFACT_FILENAME == "evaluation.json"
+    assert TRIAGE_CLASSES == ("attention", "normal", "urgent")
 
 
 def test_application_configuration() -> None:
