@@ -4,10 +4,15 @@ from medtriage.config import (
     APP_NAME,
     APP_VERSION,
     DEFAULT_LOG_LEVEL,
+    LOGISTIC_REGRESSION_MAX_ITER,
+    MODEL_ARTIFACT_FILENAME,
     ORIGINAL_TARGET_COLUMN,
     RANDOM_SEED,
     TEST_DATA_FILENAME,
     TEXT_COLUMN,
+    TFIDF_MAX_DF,
+    TFIDF_MIN_DF,
+    TFIDF_NGRAM_RANGE,
     TRAIN_DATA_FILENAME,
     TRIAGE_TARGET_COLUMN,
     VALIDATION_SIZE,
@@ -15,6 +20,18 @@ from medtriage.config import (
 
 EXPECTED_RANDOM_SEED = 837
 EXPECTED_VALIDATION_SIZE = 0.20
+EXPECTED_MAX_ITER = 1000
+EXPECTED_TFIDF_MIN_DF = 2
+EXPECTED_TFIDF_MAX_DF = 0.95
+
+
+def test_model_configuration() -> None:
+    """Model configuration should expose centralized baseline parameters."""
+    assert MODEL_ARTIFACT_FILENAME == "baseline_pipeline.joblib"
+    assert TFIDF_NGRAM_RANGE == (1, 2)
+    assert TFIDF_MIN_DF == EXPECTED_TFIDF_MIN_DF
+    assert TFIDF_MAX_DF == EXPECTED_TFIDF_MAX_DF
+    assert LOGISTIC_REGRESSION_MAX_ITER == EXPECTED_MAX_ITER
 
 
 def test_application_configuration() -> None:
