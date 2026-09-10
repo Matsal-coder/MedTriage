@@ -3,6 +3,9 @@
 from medtriage.config import (
     APP_NAME,
     APP_VERSION,
+    BASELINE_BENCHMARK_FILENAME,
+    BENCHMARK_MEASURED_RUNS,
+    BENCHMARK_WARMUP_RUNS,
     DEFAULT_LOG_LEVEL,
     EVALUATION_ARTIFACT_FILENAME,
     LOGISTIC_REGRESSION_MAX_ITER,
@@ -25,6 +28,8 @@ EXPECTED_VALIDATION_SIZE = 0.20
 EXPECTED_MAX_ITER = 1000
 EXPECTED_TFIDF_MIN_DF = 2
 EXPECTED_TFIDF_MAX_DF = 0.95
+EXPECTED_BENCHMARK_WARMUP_RUNS = 20
+EXPECTED_BENCHMARK_MEASURED_RUNS = 500
 
 
 def test_model_configuration() -> None:
@@ -36,6 +41,9 @@ def test_model_configuration() -> None:
     assert LOGISTIC_REGRESSION_MAX_ITER == EXPECTED_MAX_ITER
     assert EVALUATION_ARTIFACT_FILENAME == "evaluation.json"
     assert TRIAGE_CLASSES == ("attention", "normal", "urgent")
+    assert BASELINE_BENCHMARK_FILENAME == "baseline_latency.json"
+    assert BENCHMARK_WARMUP_RUNS == EXPECTED_BENCHMARK_WARMUP_RUNS
+    assert BENCHMARK_MEASURED_RUNS == EXPECTED_BENCHMARK_MEASURED_RUNS
 
 
 def test_application_configuration() -> None:
