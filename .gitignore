@@ -32,3 +32,14 @@ Thumbs.db
 build/
 dist/
 *.egg-info/
+
+# Local datasets
+data/raw/*
+data/processed/*
+
+# Keep directory structure
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# Generated ML artifacts
+artifacts/
