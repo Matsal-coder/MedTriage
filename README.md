@@ -9,7 +9,7 @@ O mapeamento para as classes `normal`, `attention` e `urgent` é uma simplifica�
 
 ## Status do projeto
 
-O projeto está no final do BLOCO 2 — Dataset, NLP, treinamento, API real e latência baseline.
+O projeto está no final do BLOCO 3 — CI/CD e orquestração com Airflow.
 
 Neste estágio já estão implementados:
 
@@ -18,27 +18,28 @@ Neste estágio já estão implementados:
 - lint e formatação com Ruff;
 - testes com pytest;
 - configuração centralizada;
-- logging básico com a biblioteca padrão;
+- logging básico;
 - aplicação FastAPI;
-- endpoint `GET /health`;
-- endpoint `POST /predict`;
-- Dockerfile funcional;
-- execução da API em container como usuário não-root;
+- endpoints `GET /health` e `POST /predict`;
+- Dockerfile funcional com usuário não-root;
 - Medical Abstracts TC Corpus;
 - validação e preparação dos dados;
 - split reproduzível treino/validação;
-- modelo baseline com TF-IDF + Logistic Regression;
-- persistência do modelo com Joblib;
+- baseline TF-IDF + Logistic Regression;
+- persistência com Joblib;
 - avaliação em validação e teste;
-- carregamento do modelo no startup da API;
 - benchmark baseline de latência;
-- documentação arquitetural atualizada.
+- GitHub Actions;
+- validação automática de lint, formatação, testes e Docker build;
+- artefato temporário de modelo para CI;
+- Apache Airflow 3.3.1 em WSL/Linux;
+- DAG de treino e avaliação;
+- testes estruturais da DAG;
+- validação real da DAG no GitHub Actions;
+- execução end-to-end da DAG localmente.
 
 Ainda não fazem parte do estado atual:
 
-- GitHub Actions;
-- Airflow;
-- DAG de treinamento;
 - Prometheus;
 - Grafana;
 - endpoint `/metrics`;
@@ -52,7 +53,7 @@ Ainda não fazem parte do estado atual:
 ### Implementada
 
 - Python 3.12.2
-- Poetry
+- Poetry 2.4.3
 - FastAPI
 - Uvicorn
 - pandas
@@ -61,73 +62,51 @@ Ainda não fazem parte do estado atual:
 - pytest
 - Ruff
 - Docker
-
-### Planejada para os próximos blocos
-
 - GitHub Actions
-- Apache Airflow
+- Apache Airflow 3.3.1
+- WSL2 / Ubuntu 24.04 LTS para Airflow local
+
+### Planejada
+
 - Prometheus
 - Grafana
 - ONNX
+- quantização
 
 ## Estrutura atual
 
 ```text
 medtriage-mlops/
+├── .github/workflows/ci.yml
+├── airflow/
+│   ├── README.md
+│   └── requirements-airflow.txt
+├── dags/
+│   └── training_pipeline.py
 ├── data/
 │   ├── raw/
-│   │   └── .gitkeep
 │   └── processed/
-│       └── .gitkeep
 ├── docs/
 │   ├── architecture.md
 │   └── baseline-results.md
-├── src/
-│   └── medtriage/
-│       ├── __init__.py
-│       ├── config.py
-│       ├── logging.py
-│       ├── api/
-│       │   ├── __init__.py
-│       │   ├── app.py
-│       │   └── schemas.py
-│       ├── benchmarking/
-│       │   ├── __init__.py
-│       │   └── latency.py
-│       ├── data/
-│       │   ├── __init__.py
-│       │   ├── loader.py
-│       │   └── validation.py
-│       └── modeling/
-│           ├── __init__.py
-│           ├── evaluate.py
-│           ├── predict.py
-│           └── train.py
+├── src/medtriage/
+│   ├── api/
+│   ├── benchmarking/
+│   ├── ci/
+│   ├── data/
+│   ├── modeling/
+│   ├── config.py
+│   └── logging.py
 ├── tests/
 │   ├── integration/
-│   │   ├── test_data_pipeline.py
-│   │   ├── test_evaluation_pipeline.py
-│   │   ├── test_health.py
-│   │   ├── test_predict.py
-│   │   └── test_training_pipeline.py
 │   └── unit/
-│       ├── test_benchmarking.py
-│       ├── test_config.py
-│       ├── test_data_validation.py
-│       ├── test_evaluation.py
-│       ├── test_modeling.py
-│       └── test_prediction.py
-├── .dockerignore
-├── .gitignore
 ├── Dockerfile
-├── poetry.lock
 ├── pyproject.toml
+├── poetry.lock
 └── README.md
 ```
 
-## Instalação
-
-O projeto utiliza Poetry para gerenciamento de dependências.
+## Instalação principal
 
 ```bash
 poetry install
@@ -139,21 +118,17 @@ O pacote `medtriage` é instalado a partir de `src/medtriage/`.
 
 ```bash
 poetry run pytest
-```
-
-```bash
 poetry run ruff check .
-```
-
-```bash
 poetry run ruff format --check .
 ```
 
+Ao final do Bloco 3, a suite possui 40 testes.
+
 ## Dataset
 
-O dataset adotado é o Medical Abstracts Text Classification Corpus.
+Dataset: Medical Abstracts Text Classification Corpus.
 
-Arquivos utilizados:
+Arquivos:
 
 ```text
 medical_tc_train.csv
@@ -161,46 +136,23 @@ medical_tc_test.csv
 medical_tc_labels.csv
 ```
 
-Os arquivos completos do dataset ficam em:
+Local:
 
 ```text
 data/raw/
 ```
 
-Eles NÃO são versionados no Git.
+Os dados não são versionados no Git.
 
-A estrutura dos diretórios é preservada no repositório através de arquivos `.gitkeep`.
-
-## Colunas relevantes
-
-O corpus utiliza:
+Colunas principais:
 
 ```text
 medical_abstract
 condition_label
-```
-
-No projeto é adicionada também:
-
-```text
 triage_label
 ```
 
-A coluna `condition_label` original é preservada para rastreabilidade.
-
-## Mapeamento acadêmico para triagem
-
-O corpus possui originalmente cinco categorias:
-
-```text
-1 -> Neoplasms
-2 -> Digestive system diseases
-3 -> Nervous system diseases
-4 -> Cardiovascular diseases
-5 -> General pathological conditions
-```
-
-Para adequar o projeto ao cenário acadêmico do Tech Challenge, foi adotado o seguinte mapeamento:
+Mapeamento acadêmico:
 
 ```text
 1 -> urgent
@@ -210,13 +162,7 @@ Para adequar o projeto ao cenário acadêmico do Tech Challenge, foi adotado o s
 5 -> normal
 ```
 
-Esse mapeamento é deliberadamente simplificado e serve somente como proxy acadêmica.
-
-Ele não representa conhecimento médico suficiente para inferir urgência clínica real.
-
 ## Pipeline de dados
-
-Fluxo:
 
 ```text
 CSV
@@ -230,44 +176,9 @@ add_triage_labels()
 split_training_data()
 ```
 
-Validações implementadas:
-
-- dataset não vazio;
-- presença das colunas obrigatórias;
-- ausência de abstracts nulos;
-- ausência de labels nulos;
-- abstracts não vazios;
-- labels originais limitados a 1, 2, 3, 4 e 5.
-
-O texto também passa por:
-
-- `strip`;
-- normalização de espaços em branco.
-
-## Split
-
-O corpus disponibiliza treino e teste oficiais.
-
-O arquivo oficial de treino contém 11.550 amostras e é dividido em:
-
-```text
-80% treino
-20% validação
-```
-
-com:
-
-```text
-RANDOM_SEED = 837
-```
-
-e estratificação por `triage_label`.
-
-O arquivo oficial de teste possui 2.888 amostras e permanece reservado para avaliação final.
+O treino oficial contém 11.550 amostras e é dividido em 80% treino e 20% validação, com `RANDOM_SEED = 837` e estratificação. O teste oficial possui 2.888 amostras.
 
 ## Modelo baseline
-
-O baseline é composto por:
 
 ```text
 TfidfVectorizer
@@ -278,89 +189,36 @@ LogisticRegression
 Parâmetros principais:
 
 ```text
-TF-IDF
 ngram_range = (1, 2)
 min_df = 2
 max_df = 0.95
 lowercase = True
-
-Logistic Regression
 max_iter = 1000
 random_state = 837
 ```
 
-O TF-IDF e o classificador ficam dentro de um único `sklearn.pipeline.Pipeline`.
-
-## Treinamento
-
-Execute:
+Treinamento:
 
 ```bash
 poetry run python -m medtriage.modeling.train
 ```
 
-Fluxo:
-
-```text
-medical_tc_train.csv
- ↓
-load_dataset
- ↓
-add_triage_labels
- ↓
-split_training_data
- ↓
-TF-IDF + Logistic Regression
- ↓
-fit
- ↓
-baseline_pipeline.joblib
-```
-
-Artefato gerado:
+Artefato:
 
 ```text
 artifacts/models/baseline_pipeline.joblib
 ```
 
-Esse artefato não é versionado no Git.
-
-## Avaliação
-
-Execute:
+Avaliação:
 
 ```bash
 poetry run python -m medtriage.modeling.evaluate
 ```
 
-Artefato gerado:
+Artefato:
 
 ```text
 artifacts/models/evaluation.json
-```
-
-As métricas incluem:
-
-- accuracy;
-- precision macro;
-- recall macro;
-- F1 macro;
-- F1 weighted;
-- métricas por classe;
-- recall da classe `urgent`;
-- matriz de confusão;
-- quantidade de amostras avaliadas.
-
-### Resultados — Validação
-
-```text
-samples           2310
-accuracy          0.5632
-precision_macro   0.5351
-recall_macro      0.5273
-f1_macro          0.5284
-f1_weighted       0.5558
-urgent_recall     0.7505
 ```
 
 ### Resultados — Teste
@@ -375,300 +233,272 @@ f1_weighted       0.5684
 urgent_recall     0.7675
 ```
 
-Os resultados de validação e teste são próximos, sem evidência de diferença excessiva entre os conjuntos.
-
 ## API local
-
-Execute:
 
 ```bash
 poetry run uvicorn medtriage.api.app:app --host 127.0.0.1 --port 8000
 ```
 
-A API carrega o modelo uma única vez durante o lifespan do FastAPI.
+Endpoints:
+
+```text
+GET /health
+POST /predict
+```
+
+## Docker
+
+```bash
+docker build -t medtriage-mlops .
+docker run --rm -p 8000:8000 medtriage-mlops
+```
+
+O container executa como usuário não-root.
+
+## Estratégia de artefato para CI
+
+O Dockerfile copia:
+
+```text
+artifacts/models/baseline_pipeline.joblib
+```
+
+Esse arquivo não é versionado. Para permitir Docker build em runner limpo, foi criado:
+
+```text
+src/medtriage/ci/prepare_model.py
+```
+
+A rotina cria um modelo temporário usando o mesmo código de treino e persistência do projeto. Ele serve somente ao CI e não substitui o modelo real.
+
+## GitHub Actions
+
+Workflow:
+
+```text
+.github/workflows/ci.yml
+```
+
+Triggers:
+
+```text
+push -> main
+pull_request -> main
+```
+
+### Job `quality-and-build`
+
+```text
+checkout
+ ↓
+Python 3.12.2
+ ↓
+Poetry 2.4.3
+ ↓
+poetry install
+ ↓
+ruff check
+ ↓
+ruff format --check
+ ↓
+pytest
+ ↓
+prepare_model
+ ↓
+docker build
+```
+
+### Job `airflow-dag-validation`
+
+```text
+checkout
+ ↓
+Python 3.12.2
+ ↓
+Airflow 3.3.1
+ ↓
+dependências ML
+ ↓
+MedTriage editable
+ ↓
+airflow db migrate
+ ↓
+airflow dags reserialize
+ ↓
+list-import-errors
+ ↓
+validar DAG
+ ↓
+validar tasks
+```
+
+Os dois jobs foram validados com sucesso em pull request.
+
+## Airflow
+
+A configuração detalhada está em:
+
+```text
+airflow/README.md
+```
+
+Arquitetura local:
+
+```text
+Windows + Poetry
+└── aplicação MedTriage
+
+WSL2 / Ubuntu
+└── Apache Airflow 3.3.1
+    └── DAG MedTriage
+```
+
+O pacote é disponibilizado ao ambiente Airflow em editable mode:
+
+```bash
+python -m pip install -e . --no-deps
+```
+
+## DAG de treinamento
+
+Arquivo:
+
+```text
+dags/training_pipeline.py
+```
+
+DAG:
+
+```text
+medtriage_training_pipeline
+```
+
+Configuração:
+
+```text
+schedule=None
+catchup=False
+```
 
 Fluxo:
 
 ```text
-FastAPI startup
- ↓
-PredictionService
- ↓
-joblib.load()
- ↓
-baseline_pipeline.joblib em memória
- ↓
-requests de inferência
+validate_data
+    ↓
+train_model
+    ↓
+evaluate_model
+    ↓
+validate_artifacts
 ```
 
-## Health check
+A DAG reutiliza `load_dataset()`, `run_training()` e `run_evaluation()` e não duplica lógica de ML.
+
+## Teste local da DAG
 
 ```bash
-curl http://127.0.0.1:8000/health
+airflow dags test medtriage_training_pipeline 2026-09-10
 ```
 
-Resposta:
+Execução validada:
 
-```json
-{"status":"ok"}
+```text
+validate_data       success
+train_model         success
+evaluate_model      success
+validate_artifacts  success
+DagRun              success
 ```
 
-## Prediction
+## Testes da DAG
 
-Request:
+Arquivo:
 
-```bash
-curl -X POST   http://127.0.0.1:8000/predict   -H "Content-Type: application/json"   -d '{"text":"Patient presents with acute cardiovascular symptoms and chest pain."}'
+```text
+tests/unit/test_airflow_dag.py
 ```
 
-Contrato de resposta:
+Usa `ast` para validar o contrato estrutural sem instalar Airflow no Poetry principal.
 
-```json
-{
-  "prediction": "normal",
-  "probabilities": {
-    "attention": 0.3643997101916822,
-    "normal": 0.4169552447148065,
-    "urgent": 0.2186450450935112
-  },
-  "inference_time_ms": 18.14039999999295
-}
-```
+São validados:
 
-Os valores exatos dependem da entrada e do ambiente.
+- existência da DAG;
+- quatro task functions;
+- `dag_id`;
+- `schedule=None`;
+- `catchup=False`;
+- reutilização das funções MedTriage;
+- ordem das dependências.
 
-Entradas vazias ou contendo somente whitespace retornam HTTP 422.
+A integração real é validada pelo job `airflow-dag-validation`.
 
-## Benchmark baseline de latência
-
-Execute:
+## Benchmark baseline
 
 ```bash
 poetry run python -m medtriage.benchmarking.latency
 ```
 
-Metodologia:
+Resultados:
 
 ```text
-carregamento único do modelo
- ↓
-20 warm-ups
- ↓
-500 inferências medidas
- ↓
-5 textos fixos repetidos ciclicamente
- ↓
-estatísticas agregadas
+mean_ms             2.2997
+p50_ms              2.2074
+p95_ms              2.8114
+throughput_req_s  434.84
 ```
 
-Resultado obtido no ambiente local:
+Esses valores serão usados como referência no Bloco 5.
+
+## Estado ao final do Bloco 3
 
 ```text
-mean       2.2997 ms
-p50        2.2074 ms
-p95        2.8114 ms
-min        1.8789 ms
-max        4.0201 ms
-throughput 434.84 req/s
-```
+Git push / Pull Request
+          ↓
+   GitHub Actions
+     ↙         ↘
+quality       Airflow
+and build     validation
 
-Ambiente:
-
-```text
-Python 3.12.2
-Windows 10
-Intel64 Family 6 Model 69 Stepping 1, GenuineIntel
-```
-
-Esse benchmark mede somente inferência do modelo em memória.
-
-Ele não representa latência HTTP end-to-end.
-
-Artefato gerado:
-
-```text
-artifacts/benchmarks/baseline_latency.json
-```
-
-## Docker
-
-A imagem utiliza:
-
-```text
-python:3.12.2-slim
-```
-
-e executa como:
-
-```text
-appuser
-```
-
-O runtime inclui:
-
-```text
-src/
-artifacts/models/baseline_pipeline.joblib
-```
-
-Os artefatos de avaliação e benchmark não são necessários dentro da imagem.
-
-Build:
-
-```bash
-docker build -t medtriage-mlops .
-```
-
-Execução:
-
-```bash
-docker run --rm -p 8000:8000 --name medtriage-api medtriage-mlops
-```
-
-Smoke tests:
-
-```bash
-curl http://127.0.0.1:8000/health
-```
-
-```bash
-curl -X POST   http://127.0.0.1:8000/predict   -H "Content-Type: application/json"   -d '{"text":"Patient presents with acute cardiovascular symptoms and chest pain."}'
-```
-
-Verificação do usuário:
-
-```bash
-docker exec medtriage-api whoami
-```
-
-Esperado:
-
-```text
-appuser
-```
-
-Verificação do modelo dentro do container, usando Git Bash:
-
-```bash
-docker exec medtriage-api sh -c 'ls -lh /app/artifacts/models/'
-```
-
-ou:
-
-```bash
-docker exec medtriage-api sh -c 'test -f /app/artifacts/models/baseline_pipeline.joblib && echo MODEL_OK'
-```
-
-## Persistência de artefatos
-
-```text
-artifacts/
-├── models/
-│   ├── baseline_pipeline.joblib
-│   └── evaluation.json
-└── benchmarks/
-    └── baseline_latency.json
-```
-
-Esses arquivos são gerados localmente e ignorados pelo Git.
-
-## Decisão arquitetural de inferência
-
-A principal forma de inferência é real-time.
-
-Fluxo:
-
-```text
-Cliente
- ↓
-POST /predict
- ↓
-FastAPI
- ↓
-PredictionService
- ↓
-Pipeline TF-IDF + Logistic Regression
- ↓
-prediction + probabilities + inference_time_ms
-```
-
-Batch continua sendo usado para:
-
-- preparação de dados;
-- treinamento;
-- avaliação;
-- benchmarks;
-- futuro re-treinamento orquestrado.
-
-## Estratégia de cloud
-
-A arquitetura de referência continua considerando Google Cloud Run para uma eventual execução gerenciada do container.
-
-Essa é uma decisão acadêmica e arquitetural.
-
-Não existe deploy real em cloud no Bloco 2.
-
-A solução permanece portável para serviços como:
-
-- Azure Container Apps;
-- AWS App Runner;
-- AWS ECS/Fargate.
-
-## Arquitetura alvo
-
-```text
 Dataset
- ↓
+  ↓
 Airflow
- ↓
-Treinamento
- ↓
-Modelo
- ↓
-Scikit-learn / ONNX
- ↓
-FastAPI
- ↓
-Docker
- ↓
-/predict | /health | /metrics
-                      ↓
-                  Prometheus
-                      ↓
-                    Grafana
+  ↓
+validate_data
+  ↓
+run_training()
+  ↓
+baseline_pipeline.joblib
+  ↓
+run_evaluation()
+  ↓
+evaluation.json
+  ↓
+validate_artifacts
+
+baseline_pipeline.joblib
+    ↙              ↘
+ FastAPI        benchmark
 ```
 
-GitHub Actions será responsável por:
+## Próximos passos
 
-```text
-lint
-testes
-build
-```
+### Bloco 4 — Observabilidade
 
-## Evolução planejada
-
-### Bloco 3
-
-- GitHub Actions;
-- Airflow;
-- DAG de treinamento;
-- integração do treinamento existente com orquestração;
-- automação de lint, testes e build.
-
-### Bloco 4
-
+- `/metrics`;
 - Prometheus;
 - Grafana;
-- `/metrics`;
-- observabilidade;
-- métricas de aplicação e inferência.
+- métricas técnicas e de ML;
+- dashboards.
 
-### Bloco 5
+### Bloco 5 — Otimização
 
 - ONNX;
-- otimização do modelo;
+- quantização se aplicável;
 - benchmark comparativo;
-- comparação justa com o baseline;
-- documentação consolidada;
+- análise de trade-offs;
+- documentação final;
 - vídeo STAR.
+
+## Aviso de uso
+
+Este projeto é exclusivamente acadêmico. As classes de triagem não foram validadas clinicamente e não devem ser utilizadas para decisões médicas reais.
