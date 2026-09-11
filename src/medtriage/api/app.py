@@ -3,8 +3,9 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 
+from medtriage.api.metrics import metrics_response, prometheus_middleware
 from medtriage.api.schemas import (
     HealthResponse,
     PredictionRequest,
@@ -39,6 +40,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.middleware("http")(prometheus_middleware)
+
 
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
@@ -63,3 +66,9 @@ def predict(
         probabilities=probabilities,
         inference_time_ms=inference_time_ms,
     )
+
+
+@app.get("/metrics", include_in_schema=False)
+def metrics() -> Response:
+    """Expose Prometheus metrics."""
+    return metrics_response()
