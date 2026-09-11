@@ -42,3 +42,71 @@ jobs:
 
       - name: Build Docker image
         run: docker build -t medtriage-mlops .
+
+  airflow-dag-validation:
+    runs-on: ubuntu-latest
+
+    env:
+      AIRFLOW_HOME: ${{ github.workspace }}/.airflow
+      AIRFLOW__CORE__DAGS_FOLDER: ${{ github.workspace }}/dags
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12.2"
+
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+
+      - name: Install Airflow
+        run: |
+          AIRFLOW_VERSION="3.3.1"
+          PYTHON_VERSION="3.12"
+          CONSTRAINT_URL="https://raw.githubusercontent.com/apache/airflow/constraints-${AIRFLOW_VERSION}/constraints-${PYTHON_VERSION}.txt"
+
+          python -m pip install \
+            "apache-airflow==${AIRFLOW_VERSION}" \
+            --constraint "${CONSTRAINT_URL}"
+
+      - name: Install MedTriage ML dependencies
+        run: |
+          python -m pip install \
+            "pandas>=3.0.5,<4.0.0" \
+            "scikit-learn>=1.9.0,<2.0.0"
+
+      - name: Install MedTriage package
+        run: python -m pip install -e . --no-deps
+
+      - name: Initialize Airflow database
+        run: airflow db migrate
+
+      - name: Serialize DAGs
+        run: airflow dags reserialize
+
+      - name: Check DAG import errors
+        run: |
+          OUTPUT="$(airflow dags list-import-errors)"
+          echo "$OUTPUT"
+
+          if [ "$OUTPUT" != "No data found" ]; then
+            exit 1
+          fi
+
+      - name: Validate MedTriage DAG
+        run: |
+          airflow dags report | grep "medtriage_training_pipeline"
+
+      - name: Validate MedTriage tasks
+        run: |
+          TASKS="$(airflow tasks list medtriage_training_pipeline)"
+          echo "$TASKS"
+
+          echo "$TASKS" | grep -Fx "validate_data"
+          echo "$TASKS" | grep -Fx "train_model"
+          echo "$TASKS" | grep -Fx "evaluate_model"
+          echo "$TASKS" | grep -Fx "validate_artifacts"
