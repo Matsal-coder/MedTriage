@@ -9,7 +9,7 @@ O mapeamento para as classes `normal`, `attention` e `urgent` é uma simplifica�
 
 ## Status do projeto
 
-O projeto está no final do BLOCO 3 — CI/CD e orquestração com Airflow.
+O projeto está no final do BLOCO 4 — Prometheus, Grafana e observabilidade.
 
 Neste estágio já estão implementados:
 
@@ -20,7 +20,7 @@ Neste estágio já estão implementados:
 - configuração centralizada;
 - logging básico;
 - aplicação FastAPI;
-- endpoints `GET /health` e `POST /predict`;
+- endpoints `GET /health`, `POST /predict` e `GET /metrics`;
 - Dockerfile funcional com usuário não-root;
 - Medical Abstracts TC Corpus;
 - validação e preparação dos dados;
@@ -36,17 +36,25 @@ Neste estágio já estão implementados:
 - DAG de treino e avaliação;
 - testes estruturais da DAG;
 - validação real da DAG no GitHub Actions;
-- execução end-to-end da DAG localmente.
+- execução end-to-end da DAG localmente;
+- instrumentação HTTP com `prometheus-client`;
+- métricas de requisições, latência e erros;
+- Prometheus em Docker Compose;
+- Grafana em Docker Compose;
+- datasource Prometheus provisionado automaticamente;
+- dashboard Grafana versionado e provisionado automaticamente;
+- gerador de tráfego para demonstração;
+- testes unitários e de integração da camada de observabilidade.
 
 Ainda não fazem parte do estado atual:
 
-- Prometheus;
-- Grafana;
-- endpoint `/metrics`;
 - ONNX;
 - quantização;
+- pruning;
 - benchmark comparativo baseline vs modelo otimizado;
 - vídeo STAR final.
+
+MLflow não faz parte da arquitetura deste projeto.
 
 ## Stack
 
@@ -62,25 +70,38 @@ Ainda não fazem parte do estado atual:
 - pytest
 - Ruff
 - Docker
+- Docker Compose
 - GitHub Actions
 - Apache Airflow 3.3.1
 - WSL2 / Ubuntu 24.04 LTS para Airflow local
+- prometheus-client
+- Prometheus 3.5.0
+- Grafana 11.6.0
 
-### Planejada
+### Planejada para o Bloco 5
 
-- Prometheus
-- Grafana
 - ONNX
-- quantização
+- otimização de modelo
+- benchmark comparativo baseline vs modelo otimizado
+- documentação final
+- vídeo STAR
 
 ## Estrutura atual
 
 ```text
 medtriage-mlops/
-├── .github/workflows/ci.yml
+├── .github/
+│   └── workflows/
+│       └── ci.yml
 ├── airflow/
 │   ├── README.md
 │   └── requirements-airflow.txt
+├── artifacts/
+│   ├── benchmarks/
+│   │   └── baseline_latency.json
+│   └── models/
+│       ├── baseline_pipeline.joblib
+│       └── evaluation.json
 ├── dags/
 │   └── training_pipeline.py
 ├── data/
@@ -89,17 +110,39 @@ medtriage-mlops/
 ├── docs/
 │   ├── architecture.md
 │   └── baseline-results.md
-├── src/medtriage/
-│   ├── api/
-│   ├── benchmarking/
-│   ├── ci/
-│   ├── data/
-│   ├── modeling/
-│   ├── config.py
-│   └── logging.py
+├── monitoring/
+│   ├── prometheus/
+│   │   └── prometheus.yml
+│   └── grafana/
+│       ├── dashboards/
+│       │   └── medtriage-dashboard.json
+│       └── provisioning/
+│           ├── dashboards/
+│           │   └── dashboards.yml
+│           └── datasources/
+│               └── datasource.yml
+├── scripts/
+│   └── generate_requests.py
+├── src/
+│   └── medtriage/
+│       ├── api/
+│       │   ├── app.py
+│       │   ├── metrics.py
+│       │   └── schemas.py
+│       ├── benchmarking/
+│       ├── ci/
+│       ├── data/
+│       ├── modeling/
+│       ├── monitoring/
+│       │   └── traffic.py
+│       ├── config.py
+│       └── logging.py
 ├── tests/
 │   ├── integration/
+│   │   └── test_metrics.py
 │   └── unit/
+│       └── test_traffic_generator.py
+├── docker-compose.yml
 ├── Dockerfile
 ├── pyproject.toml
 ├── poetry.lock
@@ -122,7 +165,7 @@ poetry run ruff check .
 poetry run ruff format --check .
 ```
 
-Ao final do Bloco 3, a suite possui 40 testes.
+Ao final do Bloco 4, a suíte possui 55 testes.
 
 ## Dataset
 
@@ -235,6 +278,8 @@ urgent_recall     0.7675
 
 ## API local
 
+Inicialização:
+
 ```bash
 poetry run uvicorn medtriage.api.app:app --host 127.0.0.1 --port 8000
 ```
@@ -242,18 +287,520 @@ poetry run uvicorn medtriage.api.app:app --host 127.0.0.1 --port 8000
 Endpoints:
 
 ```text
-GET /health
+GET  /health
 POST /predict
+GET  /metrics
 ```
+
+### GET /health
+
+Resposta esperada:
+
+```json
+{"status":"ok"}
+```
+
+### POST /predict
+
+Request:
+
+```json
+{
+  "text": "Patient with severe chest pain and shortness of breath."
+}
+```
+
+Response conceitual:
+
+```json
+{
+  "prediction": "attention",
+  "probabilities": {
+    "attention": 0.44,
+    "normal": 0.35,
+    "urgent": 0.21
+  },
+  "inference_time_ms": 19.5
+}
+```
+
+`inference_time_ms` mede somente a inferência do modelo.
+
+### GET /metrics
+
+Expõe métricas no formato Prometheus.
+
+As principais métricas customizadas são:
+
+```text
+medtriage_http_requests_total
+medtriage_http_request_duration_seconds
+medtriage_http_errors_total
+```
+
+## Estratégia de instrumentação
+
+A instrumentação HTTP é centralizada em middleware próprio com `prometheus_client`.
+
+Arquivo:
+
+```text
+src/medtriage/api/metrics.py
+```
+
+Decisões:
+
+- `Counter` para número de requisições;
+- `Histogram` para duração HTTP;
+- `Counter` para erros;
+- erro definido como `status_code >= 400`;
+- labels de baixa cardinalidade;
+- rota normalizada em vez do path bruto;
+- rotas desconhecidas usam `route="__unmatched__"`.
+
+Labels utilizadas:
+
+```text
+method
+route
+status_code
+```
+
+Não são usados como labels:
+
+- conteúdo do request;
+- texto médico;
+- IDs livres;
+- mensagens arbitrárias de erro;
+- dados sensíveis.
+
+## Rotas excluídas da instrumentação
+
+As seguintes rotas não entram nas métricas HTTP da aplicação:
+
+```text
+/metrics
+/docs
+/openapi.json
+```
+
+Motivo:
+
+- `/metrics` é consultada periodicamente pelo próprio Prometheus;
+- `/docs` e `/openapi.json` são rotas de infraestrutura/documentação;
+- excluí-las reduz ruído nas métricas de uso real da API.
+
+## Latência HTTP vs latência de inferência
+
+Há dois conceitos diferentes:
+
+```text
+inference_time_ms
+```
+
+Tempo gasto especificamente na inferência do modelo em `/predict`.
+
+```text
+medtriage_http_request_duration_seconds
+```
+
+Tempo HTTP end-to-end da requisição.
+
+O benchmark puro do modelo permanece separado em:
+
+```text
+artifacts/benchmarks/baseline_latency.json
+```
+
+e será usado no Bloco 5 para comparação com a versão otimizada.
 
 ## Docker
 
+Build manual:
+
 ```bash
 docker build -t medtriage-mlops .
+```
+
+Execução:
+
+```bash
 docker run --rm -p 8000:8000 medtriage-mlops
 ```
 
 O container executa como usuário não-root.
+
+## Pré-requisito do modelo
+
+O Dockerfile copia:
+
+```text
+artifacts/models/baseline_pipeline.joblib
+```
+
+O arquivo real do modelo não é versionado no Git.
+
+Antes de executar:
+
+```bash
+docker compose up --build
+```
+
+o artefato deve existir localmente.
+
+Treinamento:
+
+```bash
+poetry run python -m medtriage.modeling.train
+```
+
+Validação simples:
+
+```bash
+test -f artifacts/models/baseline_pipeline.joblib && echo "model OK"
+```
+
+O modelo sintético criado em `src/medtriage/ci/prepare_model.py` serve somente ao CI e não deve ser usado como modelo real da aplicação.
+
+## Docker Compose — observabilidade
+
+A stack de monitoramento possui três serviços:
+
+```text
+api
+prometheus
+grafana
+```
+
+Inicialização:
+
+```bash
+docker compose up --build
+```
+
+Estado:
+
+```bash
+docker compose ps
+```
+
+Encerramento:
+
+```bash
+docker compose down
+```
+
+Portas:
+
+```text
+FastAPI     http://localhost:8000
+Prometheus  http://localhost:9090
+Grafana     http://localhost:3000
+```
+
+Fluxo:
+
+```text
+FastAPI
+  ↓
+GET /metrics
+  ↓
+Prometheus
+  ↓
+Grafana
+```
+
+## Prometheus
+
+Configuração:
+
+```text
+monitoring/prometheus/prometheus.yml
+```
+
+Parâmetros principais:
+
+```text
+scrape_interval = 5s
+job_name        = medtriage-api
+metrics_path    = /metrics
+target          = api:8000
+```
+
+Dentro da rede Docker, `api` é resolvido pelo nome do serviço do Compose.
+
+Para validar:
+
+1. abra `http://localhost:9090`;
+2. acesse a tela de targets;
+3. confirme `medtriage-api` como `UP`.
+
+Queries úteis:
+
+```promql
+medtriage_http_requests_total
+```
+
+```promql
+medtriage_http_request_duration_seconds_count
+```
+
+```promql
+medtriage_http_errors_total
+```
+
+## Grafana
+
+Imagem:
+
+```text
+grafana/grafana:11.6.0
+```
+
+Acesso:
+
+```text
+http://localhost:3000
+```
+
+Credenciais locais de demonstração:
+
+```text
+usuário: admin
+senha: admin
+```
+
+Essas credenciais são apenas locais e não representam uma configuração adequada para produção.
+
+### Datasource
+
+Arquivo:
+
+```text
+monitoring/grafana/provisioning/datasources/datasource.yml
+```
+
+Datasource:
+
+```text
+name: Prometheus
+uid: prometheus
+url: http://prometheus:9090
+default: true
+```
+
+### Dashboard provisioning
+
+Arquivo:
+
+```text
+monitoring/grafana/provisioning/dashboards/dashboards.yml
+```
+
+Pasta provisionada:
+
+```text
+/var/lib/grafana/dashboards
+```
+
+Dashboard versionado:
+
+```text
+monitoring/grafana/dashboards/medtriage-dashboard.json
+```
+
+Título:
+
+```text
+MedTriage API Monitoring
+```
+
+UID:
+
+```text
+medtriage-api-monitoring
+```
+
+O dashboard é carregado automaticamente quando o Grafana inicia.
+
+## Dashboard de monitoramento
+
+O dashboard possui três painéis mínimos.
+
+### 1. Total de Requisições
+
+```promql
+sum(medtriage_http_requests_total)
+```
+
+### 2. Latência HTTP p95
+
+```promql
+histogram_quantile(
+  0.95,
+  sum by (le) (
+    rate(medtriage_http_request_duration_seconds_bucket[5m])
+  )
+)
+```
+
+### 3. Taxa de Erro
+
+```promql
+100
+*
+sum(rate(medtriage_http_errors_total[5m]))
+/
+clamp_min(
+  sum(rate(medtriage_http_requests_total[5m])),
+  0.000000001
+)
+```
+
+A taxa de erro considera respostas HTTP com status `>= 400`.
+
+## Gerador de tráfego
+
+Entry point:
+
+```text
+scripts/generate_requests.py
+```
+
+Implementação:
+
+```text
+src/medtriage/monitoring/traffic.py
+```
+
+Execução padrão:
+
+```bash
+poetry run python scripts/generate_requests.py
+```
+
+Por padrão:
+
+```text
+requests      = 100
+delay         = 0.05 s
+invalid_ratio = 0.1
+```
+
+Exemplo:
+
+```bash
+poetry run python scripts/generate_requests.py \
+  --requests 200 \
+  --delay 0.02 \
+  --invalid-ratio 0.1
+```
+
+O script gera uma combinação de:
+
+- `GET /health`;
+- `POST /predict` válido;
+- `POST /predict` inválido para produzir erros controlados.
+
+Exemplo de saída:
+
+```text
+MedTriage traffic generation complete
+========================================
+Total requests      : 200
+Successful          : 178
+Client errors       : 22
+Server errors       : 0
+Unexpected failures : 0
+```
+
+Cenário sem erros intencionais:
+
+```bash
+poetry run python scripts/generate_requests.py \
+  --requests 50 \
+  --invalid-ratio 0
+```
+
+Cenário com maior taxa de erro:
+
+```bash
+poetry run python scripts/generate_requests.py \
+  --requests 50 \
+  --invalid-ratio 0.3
+```
+
+## Validação da stack de observabilidade
+
+1. Garantir que o modelo existe:
+
+```bash
+test -f artifacts/models/baseline_pipeline.joblib && echo "model OK"
+```
+
+2. Validar Compose:
+
+```bash
+docker compose config
+```
+
+3. Subir stack:
+
+```bash
+docker compose up --build
+```
+
+4. Validar API:
+
+```bash
+curl http://127.0.0.1:8000/health
+```
+
+5. Validar inferência:
+
+```bash
+curl -X POST http://127.0.0.1:8000/predict \
+  -H "Content-Type: application/json" \
+  -d '{"text":"Patient with severe chest pain and shortness of breath."}'
+```
+
+6. Validar métricas:
+
+```bash
+curl http://127.0.0.1:8000/metrics
+```
+
+7. Confirmar Prometheus:
+
+```text
+http://localhost:9090
+```
+
+Target esperado:
+
+```text
+medtriage-api -> UP
+```
+
+8. Confirmar Grafana:
+
+```text
+http://localhost:3000
+```
+
+Dashboard esperado:
+
+```text
+MedTriage API Monitoring
+```
+
+9. Gerar tráfego:
+
+```bash
+poetry run python scripts/generate_requests.py --requests 200
+```
+
+10. Verificar os painéis.
 
 ## Estratégia de artefato para CI
 
@@ -308,197 +855,82 @@ prepare_model
 docker build
 ```
 
+Os testes adicionados no Bloco 4 entram automaticamente na suíte executada por esse job.
+
 ### Job `airflow-dag-validation`
 
-```text
-checkout
- ↓
-Python 3.12.2
- ↓
-Airflow 3.3.1
- ↓
-dependências ML
- ↓
-MedTriage editable
- ↓
-airflow db migrate
- ↓
-airflow dags reserialize
- ↓
-list-import-errors
- ↓
-validar DAG
- ↓
-validar tasks
-```
-
-Os dois jobs foram validados com sucesso em pull request.
+Mantém a validação independente do DAG do Airflow.
 
 ## Airflow
 
-A configuração detalhada está em:
+Runtime separado do Poetry principal.
+
+Ambiente local:
 
 ```text
-airflow/README.md
-```
-
-Arquitetura local:
-
-```text
-Windows + Poetry
-└── aplicação MedTriage
-
-WSL2 / Ubuntu
-└── Apache Airflow 3.3.1
-    └── DAG MedTriage
-```
-
-O pacote é disponibilizado ao ambiente Airflow em editable mode:
-
-```bash
-python -m pip install -e . --no-deps
-```
-
-## DAG de treinamento
-
-Arquivo:
-
-```text
-dags/training_pipeline.py
+WSL2
+Ubuntu 24.04
+Python 3.12
+Apache Airflow 3.3.1
 ```
 
 DAG:
 
 ```text
-medtriage_training_pipeline
+dags/training_pipeline.py
 ```
 
-Configuração:
+DAG ID:
 
 ```text
-schedule=None
-catchup=False
+medtriage_training_pipeline
 ```
 
 Fluxo:
 
 ```text
 validate_data
-    ↓
+  ↓
 train_model
-    ↓
+  ↓
 evaluate_model
-    ↓
-validate_artifacts
-```
-
-A DAG reutiliza `load_dataset()`, `run_training()` e `run_evaluation()` e não duplica lógica de ML.
-
-## Teste local da DAG
-
-```bash
-airflow dags test medtriage_training_pipeline 2026-09-10
-```
-
-Execução validada:
-
-```text
-validate_data       success
-train_model         success
-evaluate_model      success
-validate_artifacts  success
-DagRun              success
-```
-
-## Testes da DAG
-
-Arquivo:
-
-```text
-tests/unit/test_airflow_dag.py
-```
-
-Usa `ast` para validar o contrato estrutural sem instalar Airflow no Poetry principal.
-
-São validados:
-
-- existência da DAG;
-- quatro task functions;
-- `dag_id`;
-- `schedule=None`;
-- `catchup=False`;
-- reutilização das funções MedTriage;
-- ordem das dependências.
-
-A integração real é validada pelo job `airflow-dag-validation`.
-
-## Benchmark baseline
-
-```bash
-poetry run python -m medtriage.benchmarking.latency
-```
-
-Resultados:
-
-```text
-mean_ms             2.2997
-p50_ms              2.2074
-p95_ms              2.8114
-throughput_req_s  434.84
-```
-
-Esses valores serão usados como referência no Bloco 5.
-
-## Estado ao final do Bloco 3
-
-```text
-Git push / Pull Request
-          ↓
-   GitHub Actions
-     ↙         ↘
-quality       Airflow
-and build     validation
-
-Dataset
-  ↓
-Airflow
-  ↓
-validate_data
-  ↓
-run_training()
-  ↓
-baseline_pipeline.joblib
-  ↓
-run_evaluation()
-  ↓
-evaluation.json
   ↓
 validate_artifacts
-
-baseline_pipeline.joblib
-    ↙              ↘
- FastAPI        benchmark
 ```
 
-## Próximos passos
+Princípio arquitetural:
 
-### Bloco 4 — Observabilidade
+```text
+Airflow sabe QUANDO executar.
+MedTriage sabe COMO executar.
+```
 
-- `/metrics`;
-- Prometheus;
-- Grafana;
-- métricas técnicas e de ML;
-- dashboards.
+## Limitações deliberadas
 
-### Bloco 5 — Otimização
+O Bloco 4 não implementa:
+
+- Alertmanager;
+- OpenTelemetry;
+- Loki;
+- Elasticsearch;
+- Kubernetes;
+- drift monitoring;
+- monitoramento avançado de ML;
+- autenticação de produção no Grafana;
+- persistência dedicada para Prometheus/Grafana.
+
+Esses elementos não são necessários para o escopo acadêmico atual e foram evitados para reduzir complexidade desnecessária.
+
+## Próximo passo — Bloco 5
+
+O Bloco 5 será responsável por:
 
 - ONNX;
-- quantização se aplicável;
+- otimização do modelo;
 - benchmark comparativo;
-- análise de trade-offs;
+- preservação dos contratos `/health`, `/predict` e `/metrics`;
+- preservação das métricas e labels existentes;
 - documentação final;
 - vídeo STAR.
 
-## Aviso de uso
-
-Este projeto é exclusivamente acadêmico. As classes de triagem não foram validadas clinicamente e não devem ser utilizadas para decisões médicas reais.
+Ao otimizar o modelo, a camada de observabilidade criada neste bloco deve permanecer funcional sem alteração de seus contratos.

@@ -6,7 +6,7 @@ O MedTriage MLOps é um projeto acadêmico para classificação de urgência em 
 
 Essas classes são uma proxy acadêmica derivada do Medical Abstracts Text Classification Corpus e não representam um protocolo clínico validado.
 
-## 2. Estado atual ao final do Bloco 3
+## 2. Estado atual ao final do Bloco 4
 
 ```text
                          Git push / Pull Request
@@ -41,10 +41,12 @@ Medical Abstracts TC Corpus
 run_evaluation()    predict.py
       ↓                ↓
 evaluation.json       FastAPI
-      ↓                ↓
-validate_artifacts  POST /predict
-                       ↓
-                    Docker
+      ↓             ↙    ↓     ↘
+validate_artifacts /health /predict /metrics
+                              ↓
+                         Prometheus
+                              ↓
+                           Grafana
 
 baseline_pipeline.joblib
           ↓
@@ -53,7 +55,7 @@ benchmarking/latency.py
 baseline_latency.json
 ```
 
-O endpoint `GET /health` permanece preservado.
+O Bloco 4 adiciona observabilidade HTTP sem alterar os contratos funcionais de `/health` e `/predict`.
 
 ## 3. Arquitetura alvo
 
@@ -70,7 +72,7 @@ Scikit-learn / ONNX
   ↓
 FastAPI
   ↓
-Docker
+Docker / Docker Compose
   ↓
 /predict | /health | /metrics
                         ↓
@@ -294,7 +296,9 @@ Responsabilidades:
 - carregar modelo;
 - inferir classe;
 - retornar probabilidades;
-- medir latência.
+- medir latência de inferência.
+
+O modelo é carregado uma única vez no lifespan da FastAPI.
 
 ## 13. FastAPI
 
@@ -307,13 +311,207 @@ src/medtriage/api/app.py
 Endpoints:
 
 ```text
-GET /health
+GET  /health
 POST /predict
+GET  /metrics
 ```
 
-O modelo é carregado no lifespan da aplicação.
+Contratos funcionais existentes:
 
-## 14. Docker
+```text
+/health  -> status da aplicação
+/predict -> classificação, probabilidades e inference_time_ms
+```
+
+O endpoint `/metrics` pertence à camada de observabilidade.
+
+## 14. Instrumentação Prometheus
+
+Arquivo:
+
+```text
+src/medtriage/api/metrics.py
+```
+
+Estratégia escolhida:
+
+```text
+middleware próprio FastAPI
++
+prometheus_client
+```
+
+Fluxo:
+
+```text
+request
+   ↓
+middleware
+   ↓
+endpoint
+   ↓
+response
+   ↓
+middleware registra:
+- request count
+- duração HTTP
+- erros
+```
+
+Motivos da escolha:
+
+- instrumentação centralizada;
+- evita duplicação entre endpoints;
+- baixo acoplamento;
+- sem biblioteca automática adicional;
+- controle explícito das labels;
+- fácil preservação durante evolução futura do modelo.
+
+## 15. Métricas
+
+### medtriage_http_requests_total
+
+Tipo:
+
+```text
+Counter
+```
+
+Labels:
+
+```text
+method
+route
+status_code
+```
+
+Significado:
+
+```text
+quantidade de requisições HTTP processadas pela API
+```
+
+### medtriage_http_request_duration_seconds
+
+Tipo:
+
+```text
+Histogram
+```
+
+Labels:
+
+```text
+method
+route
+```
+
+Significado:
+
+```text
+duração HTTP end-to-end da requisição
+```
+
+### medtriage_http_errors_total
+
+Tipo:
+
+```text
+Counter
+```
+
+Labels:
+
+```text
+method
+route
+status_code
+```
+
+Significado:
+
+```text
+quantidade de respostas HTTP classificadas como erro
+```
+
+Regra:
+
+```text
+status_code >= 400
+```
+
+## 16. Estratégia de cardinalidade
+
+Não são usados como labels:
+
+- conteúdo do request;
+- texto médico;
+- IDs livres;
+- mensagens arbitrárias de erro;
+- qualquer dado sensível.
+
+Rotas reconhecidas usam o path normalizado do FastAPI.
+
+Rotas inexistentes usam:
+
+```text
+route="__unmatched__"
+```
+
+Isso evita criar uma nova série Prometheus para cada path arbitrário.
+
+## 17. Rotas excluídas
+
+Não são instrumentadas:
+
+```text
+/metrics
+/docs
+/openapi.json
+```
+
+Motivos:
+
+- `/metrics` é consultada automaticamente pelo Prometheus;
+- `/docs` e `/openapi.json` são rotas de suporte/documentação;
+- a exclusão reduz ruído;
+- evita o Prometheus alterar as próprias métricas a cada scrape.
+
+## 18. Latência
+
+Há três conceitos distintos no projeto.
+
+### Inferência
+
+```text
+inference_time_ms
+```
+
+Medida pelo serviço de predição.
+
+### HTTP end-to-end
+
+```text
+medtriage_http_request_duration_seconds
+```
+
+Medida pelo middleware.
+
+### Benchmark do modelo
+
+```text
+artifacts/benchmarks/baseline_latency.json
+```
+
+Gerado por:
+
+```text
+src/medtriage/benchmarking/latency.py
+```
+
+O benchmark será usado no Bloco 5 para comparação com a versão otimizada.
+
+## 19. Docker
 
 O Dockerfile:
 
@@ -330,7 +528,9 @@ Contrato de runtime:
 artifacts/models/baseline_pipeline.joblib
 ```
 
-## 15. Artefato temporário para CI
+O modelo real deve existir localmente antes do build.
+
+## 20. Artefato temporário para CI
 
 Problema:
 
@@ -351,7 +551,349 @@ Esse módulo:
 
 O artefato é temporário e exclusivo do CI.
 
-## 16. GitHub Actions
+Ele não deve substituir o modelo real na execução local da stack.
+
+## 21. Docker Compose
+
+Arquivo:
+
+```text
+docker-compose.yml
+```
+
+Serviços:
+
+```text
+api
+prometheus
+grafana
+```
+
+Portas:
+
+```text
+api         8000
+prometheus  9090
+grafana     3000
+```
+
+Fluxo de rede:
+
+```text
+grafana
+   ↓
+http://prometheus:9090
+   ↓
+Prometheus
+   ↓
+http://api:8000/metrics
+   ↓
+FastAPI
+```
+
+O projeto usa a rede default criada automaticamente pelo Docker Compose.
+
+Não há necessidade atual de redes adicionais.
+
+## 22. Prometheus
+
+Imagem:
+
+```text
+prom/prometheus:v3.5.0
+```
+
+Configuração:
+
+```text
+monitoring/prometheus/prometheus.yml
+```
+
+Configuração efetiva:
+
+```text
+scrape_interval = 5s
+job_name        = medtriage-api
+target          = api:8000
+metrics_path    = /metrics
+```
+
+Estado validado no Bloco 4:
+
+```text
+medtriage-api -> UP
+```
+
+O hostname `api` vem do nome do serviço no Docker Compose.
+
+## 23. Grafana
+
+Imagem:
+
+```text
+grafana/grafana:11.6.0
+```
+
+URL:
+
+```text
+http://localhost:3000
+```
+
+Credenciais locais:
+
+```text
+admin / admin
+```
+
+Essas credenciais existem apenas para demonstração local.
+
+## 24. Provisioning do Grafana
+
+Datasource:
+
+```text
+monitoring/grafana/provisioning/datasources/datasource.yml
+```
+
+Configuração:
+
+```text
+name       = Prometheus
+uid        = prometheus
+type       = prometheus
+url        = http://prometheus:9090
+isDefault  = true
+editable   = false
+```
+
+Dashboard provider:
+
+```text
+monitoring/grafana/provisioning/dashboards/dashboards.yml
+```
+
+Provider:
+
+```text
+name   = MedTriage
+folder = MedTriage
+path   = /var/lib/grafana/dashboards
+```
+
+O provisioning garante:
+
+```text
+docker compose up
+       ↓
+Grafana inicia
+       ↓
+Prometheus já existe como datasource
+       ↓
+dashboard MedTriage já existe
+```
+
+Não é necessária configuração manual pela interface.
+
+## 25. Dashboard
+
+Arquivo versionado:
+
+```text
+monitoring/grafana/dashboards/medtriage-dashboard.json
+```
+
+Título:
+
+```text
+MedTriage API Monitoring
+```
+
+UID:
+
+```text
+medtriage-api-monitoring
+```
+
+Refresh:
+
+```text
+5s
+```
+
+Janela padrão:
+
+```text
+últimos 15 minutos
+```
+
+### Painel 1 — Total de Requisições
+
+Tipo:
+
+```text
+Stat
+```
+
+Query:
+
+```promql
+sum(medtriage_http_requests_total)
+```
+
+### Painel 2 — Latência HTTP p95
+
+Tipo:
+
+```text
+Time series
+```
+
+Query:
+
+```promql
+histogram_quantile(
+  0.95,
+  sum by (le) (
+    rate(medtriage_http_request_duration_seconds_bucket[5m])
+  )
+)
+```
+
+### Painel 3 — Taxa de Erro
+
+Tipo:
+
+```text
+Stat
+```
+
+Query:
+
+```promql
+100
+*
+sum(rate(medtriage_http_errors_total[5m]))
+/
+clamp_min(
+  sum(rate(medtriage_http_requests_total[5m])),
+  0.000000001
+)
+```
+
+A divisão usa `clamp_min` para evitar divisão por zero em períodos sem tráfego.
+
+## 26. Geração de tráfego
+
+Entry point:
+
+```text
+scripts/generate_requests.py
+```
+
+Implementação:
+
+```text
+src/medtriage/monitoring/traffic.py
+```
+
+A separação mantém:
+
+```text
+scripts/
+   ↓
+interface de execução
+
+src/medtriage/
+   ↓
+lógica reutilizável e testável
+```
+
+Parâmetros:
+
+```text
+--base-url
+--requests
+--delay
+--invalid-ratio
+```
+
+Defaults:
+
+```text
+base_url      = http://127.0.0.1:8000
+requests      = 100
+delay         = 0.05
+invalid_ratio = 0.1
+```
+
+Distribuição conceitual:
+
+```text
+request
+  ├── /predict inválido
+  ├── /health
+  └── /predict válido
+```
+
+O objetivo não é executar load testing de produção.
+
+O objetivo é gerar tráfego suficiente para:
+
+- popular as métricas;
+- demonstrar contagem de requests;
+- demonstrar latência;
+- demonstrar taxa de erro;
+- tornar o dashboard observável durante a apresentação.
+
+## 27. Testes da observabilidade
+
+Integração:
+
+```text
+tests/integration/test_metrics.py
+```
+
+Valida:
+
+- `/metrics` retorna 200;
+- content type Prometheus;
+- contador de requests;
+- observação do histograma;
+- contador de erros;
+- exclusão de `/metrics`;
+- exclusão de `/docs`;
+- exclusão de `/openapi.json`;
+- label limitada para rota desconhecida.
+
+Unitários:
+
+```text
+tests/unit/test_traffic_generator.py
+```
+
+Valida:
+
+- classificação de sucesso;
+- classificação de erro 4xx;
+- classificação de erro 5xx;
+- argumentos válidos;
+- rejeição de argumentos inválidos.
+
+Ao final do Bloco 4:
+
+```text
+55 passed
+```
+
+Ruff:
+
+```text
+check -> OK
+format --check -> OK
+```
+
+## 28. GitHub Actions
 
 Arquivo:
 
@@ -359,331 +901,204 @@ Arquivo:
 .github/workflows/ci.yml
 ```
 
-Triggers:
-
-```text
-push -> main
-pull_request -> main
-```
-
-### Job `quality-and-build`
-
-```text
-checkout
-  ↓
-Python 3.12.2
-  ↓
-Poetry
-  ↓
-install
-  ↓
-Ruff
-  ↓
-pytest
-  ↓
-prepare CI model
-  ↓
-Docker build
-```
-
-### Job `airflow-dag-validation`
-
-```text
-checkout
-  ↓
-Python 3.12.2
-  ↓
-Airflow 3.3.1
-  ↓
-ML dependencies
-  ↓
-MedTriage editable
-  ↓
-airflow db migrate
-  ↓
-airflow dags reserialize
-  ↓
-import errors
-  ↓
-DAG validation
-  ↓
-task validation
-```
-
-## 17. Estratégia de dependências do Airflow
-
-Airflow não faz parte do `pyproject.toml` principal.
-
-Motivos:
-
-- não é necessário para a API;
-- possui constraints próprias;
-- ambiente principal é Windows;
-- Airflow é Linux/POSIX-oriented;
-- evita conflitos e peso desnecessário.
-
-Arquivo:
-
-```text
-airflow/requirements-airflow.txt
-```
-
-Conteúdo:
-
-```text
-apache-airflow==3.3.1
-pandas>=3.0.5,<4.0.0
-scikit-learn>=1.9.0,<2.0.0
-```
-
-## 18. Runtime Airflow local
-
-Ambiente validado:
-
-```text
-WSL2
-Ubuntu 24.04 LTS
-Python 3.12
-Apache Airflow 3.3.1
-```
-
-MedTriage é instalado em editable mode:
-
-```bash
-python -m pip install -e . --no-deps
-```
-
-## 19. DAG de treinamento
-
-Arquivo:
-
-```text
-dags/training_pipeline.py
-```
-
-Identificador:
-
-```text
-medtriage_training_pipeline
-```
-
-Configuração:
-
-```text
-schedule=None
-catchup=False
-```
-
-Fluxo:
-
-```text
-validate_data
-    ↓
-train_model
-    ↓
-evaluate_model
-    ↓
-validate_artifacts
-```
-
-### `validate_data`
-
-Executa:
-
-```text
-load_dataset(TRAIN_DATA_PATH)
-load_dataset(TEST_DATA_PATH)
-```
-
-### `train_model`
-
-Executa:
-
-```text
-run_training()
-```
-
-### `evaluate_model`
-
-Executa:
-
-```text
-run_evaluation()
-```
-
-### `validate_artifacts`
-
-Valida:
-
-```text
-MODEL_ARTIFACT_PATH
-EVALUATION_ARTIFACT_PATH
-```
-
-## 20. Princípio da DAG fina
-
-A DAG contém somente orquestração.
-
-Não duplica:
-
-- transformações;
-- target mapping;
-- TF-IDF;
-- Logistic Regression;
-- seed;
-- paths;
-- persistência;
-- métricas.
-
-Regra:
-
-```text
-Airflow sabe QUANDO executar.
-MedTriage sabe COMO executar.
-```
-
-## 21. Execução end-to-end
-
-Comando:
-
-```bash
-airflow dags test medtriage_training_pipeline 2026-09-10
-```
-
-Resultado:
-
-```text
-validate_data       success
-train_model         success
-evaluate_model      success
-validate_artifacts  success
-DagRun              success
-```
-
-## 22. Testes estruturais da DAG
-
-Arquivo:
-
-```text
-tests/unit/test_airflow_dag.py
-```
-
-A validação usa `ast` e confirma:
-
-- existência do arquivo;
-- tasks esperadas;
-- `dag_id`;
-- `schedule=None`;
-- `catchup=False`;
-- chamadas às funções MedTriage;
-- cadeia de dependências.
-
-Isso evita instalar Airflow no ambiente Poetry principal.
-
-## 23. Validação real da DAG no CI
-
-O job `airflow-dag-validation` instala Airflow em Ubuntu e valida:
-
-- parsing;
-- serialização;
-- ausência de import errors;
-- `dag_id`;
-- quatro tasks.
-
-Assim, teste estático e teste de integração se complementam.
-
-## 24. Benchmark baseline
-
-Arquivo:
-
-```text
-src/medtriage/benchmarking/latency.py
-```
-
-Resultados:
-
-```text
-mean_ms             2.2997
-p50_ms              2.2074
-p95_ms              2.8114
-throughput_req_s  434.84
-```
-
-Será usado no Bloco 5 como referência.
-
-## 25. Cobertura ao final do Bloco 3
-
-Suite:
-
-```text
-40 testes
-```
-
-Validações locais:
-
-```text
-pytest
-ruff check
-ruff format --check
-```
-
-Validações remotas:
+O workflow continua com dois jobs:
 
 ```text
 quality-and-build
 airflow-dag-validation
 ```
 
-## 26. Limitações deliberadas
-
-### DAG manual
-
-`schedule=None` porque não há fonte automática de novos dados nem frequência definida de retreino.
-
-### Dataset fora do Git
-
-O CI não executa treino end-to-end porque os dados reais não são versionados.
-
-### Graphviz
-
-Não foi instalado por não ser necessário para execução.
-
-### MLflow
-
-Não foi incluído por não ser requisito expresso e não ser necessário para o escopo atual.
-
-## 27. Próximos blocos
-
-### Bloco 4
+Os novos testes de observabilidade entram automaticamente em:
 
 ```text
-FastAPI
+poetry run pytest
+```
+
+O Bloco 4 não adiciona Compose ao CI porque isso não é necessário para cumprir o escopo.
+
+## 29. Airflow
+
+Runtime separado do Poetry principal.
+
+DAG:
+
+```text
+medtriage_training_pipeline
+```
+
+Fluxo:
+
+```text
+validate_data
   ↓
+train_model
+  ↓
+evaluate_model
+  ↓
+validate_artifacts
+```
+
+Princípio preservado:
+
+```text
+Airflow sabe QUANDO executar.
+MedTriage sabe COMO executar.
+```
+
+A observabilidade da API não altera a arquitetura do pipeline de treinamento.
+
+## 30. Fluxo operacional completo
+
+```text
+1. Treinar modelo
+   ↓
+baseline_pipeline.joblib
+
+2. docker compose up --build
+   ↓
+API sobe
+   ↓
+Prometheus sobe
+   ↓
+Grafana sobe
+
+3. Prometheus coleta /metrics
+   ↓
+target medtriage-api fica UP
+
+4. Grafana consulta Prometheus
+   ↓
+dashboard provisionado exibe dados
+
+5. generate_requests.py
+   ↓
+/health + /predict válido + /predict inválido
+   ↓
+métricas mudam
+   ↓
+dashboard reage
+```
+
+## 31. Decisões arquiteturais do Bloco 4
+
+### Middleware próprio
+
+Escolhido em vez de instrumentação manual por endpoint ou biblioteca automática externa.
+
+Motivo:
+
+- centralização;
+- simplicidade;
+- baixo acoplamento;
+- controle de labels.
+
+### Erro = status >= 400
+
+Motivo:
+
+- regra simples;
+- captura 4xx e 5xx;
+- permite demonstrar erros controlados.
+
+### Exclusão de rotas de infraestrutura
+
+Excluídas:
+
+```text
 /metrics
-  ↓
-Prometheus
-  ↓
-Grafana
+/docs
+/openapi.json
 ```
 
-### Bloco 5
+Motivo:
+
+- reduzir ruído;
+- evitar auto-instrumentação do scrape;
+- aproximar as métricas do uso funcional.
+
+### Compose simples
+
+Escolha:
+
+- rede default;
+- sem healthchecks adicionais;
+- sem restart policies;
+- sem persistência adicional;
+- sem serviços extras.
+
+Motivo:
+
+- evitar overengineering;
+- manter stack reprodutível e adequada ao Tech Challenge.
+
+### Provisioning automático
+
+Datasource e dashboard são versionados.
+
+Motivo:
+
+- reprodutibilidade;
+- facilidade de avaliação;
+- nenhuma configuração manual necessária.
+
+## 32. Limitações deliberadas
+
+Fora do Bloco 4:
+
+- Alertmanager;
+- Loki;
+- OpenTelemetry;
+- Elasticsearch;
+- Kubernetes;
+- drift monitoring;
+- autenticação de produção;
+- persistência dedicada;
+- monitoramento avançado de ML.
+
+Esses itens não são necessários para os requisitos atuais.
+
+## 33. Continuidade para o Bloco 5
+
+O Bloco 5 deverá implementar:
+
+- ONNX;
+- otimização;
+- benchmark comparativo;
+- documentação final;
+- vídeo STAR.
+
+Regras de continuidade:
+
+1. preservar `/health`;
+2. preservar `/predict`;
+3. preservar `/metrics`;
+4. preservar os nomes das métricas;
+5. preservar as labels;
+6. evitar duplicar instrumentação;
+7. preservar o Docker Compose;
+8. manter Prometheus e Grafana funcionais;
+9. usar o benchmark baseline existente como referência;
+10. atualizar a inferência sem quebrar o contrato de resposta.
+
+Arquivos que provavelmente serão impactados:
 
 ```text
-baseline sklearn
-      ↓
-ONNX / quantização
-      ↓
-benchmark comparativo
-      ↓
-trade-offs
+src/medtriage/modeling/predict.py
+src/medtriage/config.py
+src/medtriage/benchmarking/
+Dockerfile
+pyproject.toml
+poetry.lock
+README.md
+docs/architecture.md
 ```
 
-## 28. Evolução da arquitetura
+Arquivos de observabilidade que idealmente devem permanecer estáveis:
 
 ```text
-Bloco 1: FastAPI + Docker + estrutura base
-
-Bloco 2: Dataset + NLP + treino + avaliação + inferência + benchmark
-
-Bloco 3: GitHub Actions + Docker CI + Airflow + DAG + testes de orquestração
+src/medtriage/api/metrics.py
+monitoring/prometheus/prometheus.yml
+monitoring/grafana/provisioning/
 ```
+
+O dashboard só deverá ser alterado se houver uma necessidade real de visualizar novas métricas.
