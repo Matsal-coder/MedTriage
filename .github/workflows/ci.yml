@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  quality-and-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12.2"
+
+      - name: Install Poetry
+        run: pip install "poetry==2.4.3"
+
+      - name: Install dependencies
+        run: poetry install --no-interaction --no-ansi
+
+      - name: Run Ruff lint
+        run: poetry run ruff check .
+
+      - name: Check Ruff formatting
+        run: poetry run ruff format --check .
+
+      - name: Run tests
+        run: poetry run pytest
+
+      - name: Prepare CI model artifact
+        run: poetry run python -m medtriage.ci.prepare_model
+
+      - name: Build Docker image
+        run: docker build -t medtriage-mlops .
