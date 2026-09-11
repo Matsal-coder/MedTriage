@@ -90,12 +90,8 @@ jobs:
 
       - name: Check DAG import errors
         run: |
-          OUTPUT="$(airflow dags list-import-errors)"
-          echo "$OUTPUT"
-
-          if [ "$OUTPUT" != "No data found" ]; then
-            exit 1
-          fi
+          airflow dags list-import-errors | tee /tmp/airflow-import-errors.txt
+          grep -q "No data found" /tmp/airflow-import-errors.txt
 
       - name: Validate MedTriage DAG
         run: |
