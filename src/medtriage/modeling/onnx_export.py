@@ -1,4 +1,4 @@
-"""ONNX export utilities for the trained baseline model."""
+"""ONNX export utilities for the trained baseline classifier."""
 
 from pathlib import Path
 
@@ -6,7 +6,8 @@ import joblib
 import onnx
 import onnxruntime as ort
 from skl2onnx import convert_sklearn
-from skl2onnx.common.data_types import StringTensorType
+from skl2onnx.common.data_types import FloatTensorType
+from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 
 from medtriage.config import (
@@ -30,15 +31,22 @@ def load_baseline_pipeline(
     return model
 
 
-def convert_pipeline_to_onnx(
-    model: Pipeline,
-) -> onnx.ModelProto:
-    """Convert the sklearn text classification pipeline to ONNX."""
+def get_classifier(model: Pipeline) -> LogisticRegression:
+    """Extract the logistic regression classifier from the baseline pipeline."""
     classifier = model.named_steps.get("classifier")
 
-    if classifier is None:
-        raise ValueError("Baseline pipeline must contain a 'classifier' step.")
+    if not isinstance(classifier, LogisticRegression):
+        raise TypeError(
+            "Baseline pipeline must contain a LogisticRegression 'classifier' step."
+        )
 
+    return classifier
+
+
+def convert_classifier_to_onnx(
+    classifier: LogisticRegression,
+) -> onnx.ModelProto:
+    """Convert the trained logistic regression classifier to ONNX."""
     conversion_options = {
         id(classifier): {
             "zipmap": False,
@@ -46,11 +54,16 @@ def convert_pipeline_to_onnx(
     }
 
     onnx_model = convert_sklearn(
-        model,
+        classifier,
         initial_types=[
             (
-                "text",
-                StringTensorType([None, 1]),
+                "features",
+                FloatTensorType(
+                    [
+                        None,
+                        classifier.n_features_in_,
+                    ]
+                ),
             )
         ],
         options=conversion_options,
@@ -76,7 +89,7 @@ def persist_onnx_model(
 def validate_onnx_runtime(
     artifact_path: Path,
 ) -> None:
-    """Validate that ONNX Runtime can load the exported model."""
+    """Validate that ONNX Runtime can load the exported classifier."""
     ort.InferenceSession(
         str(artifact_path),
         providers=["CPUExecutionProvider"],
@@ -87,10 +100,11 @@ def export_model_to_onnx(
     model_path: Path = MODEL_ARTIFACT_PATH,
     artifact_path: Path = OPTIMIZED_MODEL_ARTIFACT_PATH,
 ) -> Path:
-    """Convert and persist the baseline sklearn pipeline as ONNX."""
+    """Export the baseline logistic regression classifier to ONNX."""
     model = load_baseline_pipeline(model_path)
+    classifier = get_classifier(model)
 
-    onnx_model = convert_pipeline_to_onnx(model)
+    onnx_model = convert_classifier_to_onnx(classifier)
 
     exported_path = persist_onnx_model(
         onnx_model,
@@ -103,7 +117,7 @@ def export_model_to_onnx(
 
 
 def main() -> None:
-    """Export the baseline model to ONNX from the command line."""
+    """Export the trained baseline classifier to ONNX."""
     artifact_path = export_model_to_onnx()
 
     print(f"ONNX model artifact saved to: {artifact_path}")
