@@ -8,8 +8,11 @@ from medtriage.config import (
     BENCHMARK_WARMUP_RUNS,
     DEFAULT_LOG_LEVEL,
     EVALUATION_ARTIFACT_FILENAME,
+    LATENCY_COMPARISON_FILENAME,
     LOGISTIC_REGRESSION_MAX_ITER,
     MODEL_ARTIFACT_FILENAME,
+    OPTIMIZED_BENCHMARK_FILENAME,
+    OPTIMIZED_MODEL_ARTIFACT_FILENAME,
     ORIGINAL_TARGET_COLUMN,
     RANDOM_SEED,
     TEST_DATA_FILENAME,
@@ -44,6 +47,9 @@ def test_model_configuration() -> None:
     assert BASELINE_BENCHMARK_FILENAME == "baseline_latency.json"
     assert BENCHMARK_WARMUP_RUNS == EXPECTED_BENCHMARK_WARMUP_RUNS
     assert BENCHMARK_MEASURED_RUNS == EXPECTED_BENCHMARK_MEASURED_RUNS
+    assert OPTIMIZED_MODEL_ARTIFACT_FILENAME == "optimized_model.onnx"
+    assert OPTIMIZED_BENCHMARK_FILENAME == "optimized_latency.json"
+    assert LATENCY_COMPARISON_FILENAME == "latency_comparison.json"
 
 
 def test_application_configuration() -> None:

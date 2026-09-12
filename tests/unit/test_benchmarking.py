@@ -4,6 +4,11 @@ import json
 
 import pytest
 
+from medtriage.benchmarking.comparison import (
+    build_latency_comparison,
+    calculate_speedup,
+    validate_comparable_benchmarks,
+)
 from medtriage.benchmarking.latency import (
     calculate_latency_statistics,
     percentile,
@@ -68,3 +73,101 @@ def test_benchmark_results_can_be_persisted(tmp_path) -> None:
 
     assert saved_path.exists()
     assert loaded == results
+
+
+def test_speedup_calculation() -> None:
+    """Speedup should divide baseline latency by optimized latency."""
+    assert calculate_speedup(4.0, 2.0) == pytest.approx(2.0)
+
+
+def test_speedup_rejects_non_positive_optimized_latency() -> None:
+    """Speedup calculation should reject invalid optimized latency."""
+    with pytest.raises(
+        ValueError,
+        match="greater than zero",
+    ):
+        calculate_speedup(4.0, 0.0)
+
+
+def test_comparable_benchmarks_are_validated() -> None:
+    """Matching benchmark methodologies should be accepted."""
+    baseline = {
+        "latency_scope": "model_inference",
+        "warmup_runs": 20,
+        "measured_runs": 500,
+        "inputs_count": 5,
+    }
+    optimized = baseline.copy()
+
+    validate_comparable_benchmarks(
+        baseline,
+        optimized,
+    )
+
+
+def test_mismatched_benchmarks_are_rejected() -> None:
+    """Different benchmark methodologies should not be compared."""
+    baseline = {
+        "latency_scope": "model_inference",
+        "warmup_runs": 20,
+        "measured_runs": 500,
+        "inputs_count": 5,
+    }
+    optimized = {
+        **baseline,
+        "measured_runs": 100,
+    }
+
+    with pytest.raises(
+        ValueError,
+        match="measured_runs",
+    ):
+        validate_comparable_benchmarks(
+            baseline,
+            optimized,
+        )
+
+
+def test_latency_comparison_contains_speedups() -> None:
+    """Comparison should expose baseline, optimized, and speedup metrics."""
+    baseline = {
+        "benchmark": "baseline_model_inference",
+        "latency_scope": "model_inference",
+        "warmup_runs": 20,
+        "measured_runs": 500,
+        "inputs_count": 5,
+        "mean_ms": 4.0,
+        "p50_ms": 3.0,
+        "p95_ms": 5.0,
+        "min_ms": 2.0,
+        "max_ms": 6.0,
+        "throughput_requests_per_second": 250.0,
+    }
+
+    optimized = {
+        "benchmark": "optimized_onnx_model_inference",
+        "latency_scope": "model_inference",
+        "warmup_runs": 20,
+        "measured_runs": 500,
+        "inputs_count": 5,
+        "mean_ms": 2.0,
+        "p50_ms": 1.5,
+        "p95_ms": 2.5,
+        "min_ms": 1.0,
+        "max_ms": 3.0,
+        "throughput_requests_per_second": 500.0,
+    }
+
+    comparison = build_latency_comparison(
+        baseline,
+        optimized,
+    )
+
+    assert comparison["mean_speedup"] == pytest.approx(2.0)
+    assert comparison["p50_speedup"] == pytest.approx(2.0)
+    assert comparison["p95_speedup"] == pytest.approx(2.0)
+
+    assert comparison["metrics"]["mean_ms"] == {
+        "baseline": 4.0,
+        "optimized": 2.0,
+    }
