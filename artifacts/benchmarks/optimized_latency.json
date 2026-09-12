@@ -1,0 +1,19 @@
+{
+  "benchmark": "optimized_onnx_model_inference",
+  "model_artifact": "artifacts/models/optimized_model.onnx",
+  "latency_scope": "model_inference",
+  "warmup_runs": 20,
+  "inputs_count": 5,
+  "mean_ms": 2.860280000109924,
+  "p50_ms": 2.3931999967317097,
+  "p95_ms": 5.123730007471745,
+  "min_ms": 1.3687999889953062,
+  "max_ms": 19.612500007497147,
+  "throughput_requests_per_second": 349.6161214851584,
+  "measured_runs": 500,
+  "environment": {
+    "python_version": "3.12.2",
+    "platform": "Windows-10-10.0.19045-SP0",
+    "processor": "Intel64 Family 6 Model 69 Stepping 1, GenuineIntel"
+  }
+}

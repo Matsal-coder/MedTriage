@@ -1,0 +1,37 @@
+{
+  "latency_scope": "model_inference",
+  "warmup_runs": 20,
+  "measured_runs": 500,
+  "inputs_count": 5,
+  "baseline_benchmark": "baseline_model_inference",
+  "optimized_benchmark": "optimized_onnx_model_inference",
+  "metrics": {
+    "mean_ms": {
+      "baseline": 2.958671599975787,
+      "optimized": 2.860280000109924
+    },
+    "p50_ms": {
+      "baseline": 2.7021999994758517,
+      "optimized": 2.3931999967317097
+    },
+    "p95_ms": {
+      "baseline": 3.849020008055958,
+      "optimized": 5.123730007471745
+    },
+    "min_ms": {
+      "baseline": 2.388499997323379,
+      "optimized": 1.3687999889953062
+    },
+    "max_ms": {
+      "baseline": 6.71840000723023,
+      "optimized": 19.612500007497147
+    },
+    "throughput_requests_per_second": {
+      "baseline": 337.9895220571907,
+      "optimized": 349.6161214851584
+    }
+  },
+  "mean_speedup": 1.0343992895318226,
+  "p50_speedup": 1.129115829502812,
+  "p95_speedup": 0.7512144477642411
+}

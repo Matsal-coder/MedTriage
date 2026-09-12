@@ -688,29 +688,30 @@ latency_comparison.json
 ## 24. Resultado final do benchmark
 
 ```text
-Baseline mean     2.8575 ms
-ONNX mean         2.9234 ms
-Mean speedup      0.9775x
+Baseline mean     2.9587 ms
+ONNX mean         2.8603 ms
+Mean speedup      1.0344x
 
-Baseline p50      2.6761 ms
-ONNX p50          2.6615 ms
-p50 speedup       1.0055x
+Baseline p50      2.7022 ms
+ONNX p50          2.3932 ms
+p50 speedup       1.1291x
 
-Baseline p95      3.9202 ms
-ONNX p95          4.2578 ms
-p95 speedup       0.9207x
+Baseline p95      3.8490 ms
+ONNX p95          5.1237 ms
+p95 speedup       0.7512x
 ```
 
 Interpretação:
 
-- p50 praticamente equivalente;
-- mean levemente pior no ONNX;
-- p95 pior no ONNX;
-- throughput também levemente inferior.
+- mean melhor no ONNX nesta execução;
+- p50 melhor no ONNX;
+- p95 pior de forma relevante no ONNX;
+- throughput levemente superior;
+- maior variabilidade foi observada no backend ONNX.
 
-O backend ONNX não produziu ganho material de performance.
+O backend ONNX apresentou ganhos em métricas centrais, mas não produziu ganho consistente de performance em toda a distribuição de latência. Por esse motivo, a API final permanece utilizando o backend sklearn, enquanto ONNX é mantido como alternativa validada e benchmarkada.
 
-## 25. Por que ONNX não acelerou este caso
+## 25. Por que ONNX não apresentou ganho consistente neste caso
 
 A regressão logística original possui baixo custo.
 
@@ -726,7 +727,7 @@ dense tensor de 186.957 features
 ONNX Runtime
 ```
 
-O custo dessa conversão reduz ou elimina o benefício do runtime ONNX para um classificador linear simples.
+O custo dessa conversão compete com o benefício do runtime ONNX para um classificador linear simples. Isso ajuda a explicar por que média e p50 podem melhorar enquanto a latência de cauda, representada pelo p95, piora.
 
 Isso não invalida a técnica; demonstra que otimização deve ser validada empiricamente no contexto real.
 
@@ -749,7 +750,7 @@ ruff format --check: OK
 
 - proxy acadêmica sem validação clínica;
 - dataset não versionado;
-- artefatos de modelo não versionados;
+- baseline sklearn e artefatos intermediários não versionados; o modelo ONNX final e os JSONs de benchmark são versionados como evidência da entrega;
 - inferência otimizada depende do vectorizer sklearn;
 - conversão CSR -> dense possui overhead;
 - benchmark depende do hardware local;

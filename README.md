@@ -152,7 +152,18 @@ medtriage-mlops/
 └── README.md
 ```
 
-Os diretórios `data/` e `artifacts/` não são versionados no Git.
+Os datasets locais e os artefatos intermediários permanecem ignorados pelo Git.
+
+Como evidência da entrega final, são versionados explicitamente:
+
+```text
+artifacts/models/optimized_model.onnx
+artifacts/benchmarks/baseline_latency.json
+artifacts/benchmarks/optimized_latency.json
+artifacts/benchmarks/latency_comparison.json
+```
+
+O baseline `baseline_pipeline.joblib`, `evaluation.json` e demais artefatos gerados localmente permanecem ignorados.
 
 ## Instalação
 
@@ -718,19 +729,19 @@ Para reduzir efeitos de ambiente, a comparação final executa baseline e backen
 
 | Métrica | Baseline sklearn | Backend ONNX |
 |---|---:|---:|
-| mean | 2.8575 ms | 2.9234 ms |
-| p50 | 2.6761 ms | 2.6615 ms |
-| p95 | 3.9202 ms | 4.2578 ms |
-| min | 2.3702 ms | 2.0226 ms |
-| max | 5.7809 ms | 27.0631 ms |
-| throughput | 349.95 req/s | 342.06 req/s |
+| mean | 2.9587 ms | 2.8603 ms |
+| p50 | 2.7022 ms | 2.3932 ms |
+| p95 | 3.8490 ms | 5.1237 ms |
+| min | 2.3885 ms | 1.3688 ms |
+| max | 6.7184 ms | 19.6125 ms |
+| throughput | 337.99 req/s | 349.62 req/s |
 
 Speedups:
 
 ```text
-mean_speedup = 0.9775x
-p50_speedup  = 1.0055x
-p95_speedup  = 0.9207x
+mean_speedup = 1.0344x
+p50_speedup  = 1.1291x
+p95_speedup  = 0.7512x
 ```
 
 Fórmula:
@@ -747,22 +758,15 @@ Interpretação:
 
 ## Resultado da otimização
 
-O ONNX foi aplicado e validado funcionalmente, mas não produziu ganho material de latência para este modelo.
-
-A mediana ficou praticamente equivalente, enquanto média e p95 apresentaram pequena regressão.
+O ONNX foi aplicado e validado funcionalmente. Na execução pareada final, apresentou pequena melhora na média e no p50, mas piorou de forma relevante o p95 e mostrou maior variabilidade de latência.
 
 A principal explicação arquitetural é que a regressão logística original já possui baixo custo computacional, enquanto o backend ONNX precisa converter a saída esparsa do TF-IDF para um tensor denso `float32` de alta dimensionalidade.
 
-Portanto, neste cenário específico:
+Portanto, neste cenário específico, o ganho potencial do runtime ONNX compete diretamente com o custo adicional de preparação do tensor.
 
-```text
-custo de conversão + execução ONNX
-≈
-ou >
-custo da LogisticRegression sklearn
-```
+Como o resultado não demonstrou ganho consistente em toda a distribuição de latência, a API final permanece utilizando o backend sklearn. A implementação ONNX é mantida como alternativa validada, entregue e benchmarkada.
 
-O resultado negativo de speedup foi preservado e documentado sem manipulação do benchmark.
+Os resultados foram preservados e documentados sem manipulação do benchmark.
 
 ## Artefatos de benchmark
 
@@ -772,7 +776,14 @@ artifacts/benchmarks/optimized_latency.json
 artifacts/benchmarks/latency_comparison.json
 ```
 
-Os artefatos em `artifacts/` são ignorados pelo Git.
+Os artefatos intermediários permanecem ignorados pelo Git. Como evidência da entrega final, são versionados explicitamente:
+
+```text
+artifacts/models/optimized_model.onnx
+artifacts/benchmarks/baseline_latency.json
+artifacts/benchmarks/optimized_latency.json
+artifacts/benchmarks/latency_comparison.json
+```
 
 ## Reproduzindo a conversão ONNX
 
@@ -799,12 +810,12 @@ O comando executa baseline e ONNX no mesmo ambiente e gera os artefatos de compa
 - o problema de triagem é uma proxy acadêmica, não um protocolo clínico;
 - as classes derivam de um mapeamento simplificado das labels do dataset;
 - métricas de classificação não representam validação clínica;
-- ONNX não apresentou speedup material no cenário final;
+- ONNX não apresentou ganho consistente de latência no cenário final;
 - a representação TF-IDF possui alta dimensionalidade;
 - o backend ONNX híbrido exige conversão de matriz esparsa para tensor denso;
 - benchmark local depende do hardware e da carga do sistema;
 - resultados de latência não devem ser generalizados para outras máquinas;
-- dataset e artefatos de modelo não são versionados no Git;
+- o dataset, o baseline sklearn e artefatos intermediários não são versionados; o modelo ONNX final e os JSONs de benchmark são versionados como evidência da entrega;
 - o Airflow local é executado em ambiente isolado do Poetry principal;
 - o projeto utiliza CPU e não depende de GPU.
 
@@ -847,7 +858,7 @@ O vídeo final deve apresentar:
 - observabilidade completa;
 - equivalência ONNX validada;
 - benchmark pareado;
-- ausência de speedup material documentada com transparência.
+- ganho em média/p50, regressão no p95 e ausência de ganho consistente documentados com transparência.
 
 Link do vídeo:
 

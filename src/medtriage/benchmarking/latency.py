@@ -14,6 +14,7 @@ from medtriage.config import (
     MODEL_ARTIFACT_PATH,
     OPTIMIZED_BENCHMARK_PATH,
     OPTIMIZED_MODEL_ARTIFACT_PATH,
+    PROJECT_ROOT,
 )
 from medtriage.modeling.onnx_predict import OnnxPredictionService
 from medtriage.modeling.predict import PredictionService
@@ -99,6 +100,15 @@ def persist_benchmark(
     return artifact_path
 
 
+def portable_artifact_path(path: Path) -> str:
+    """Return a portable project-relative artifact path when possible."""
+    try:
+        relative_path = path.resolve().relative_to(PROJECT_ROOT.resolve())
+        return relative_path.as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
 def benchmark_backend(
     service: PredictionBackend,
     config: BenchmarkConfig,
@@ -121,7 +131,7 @@ def benchmark_backend(
 
     results = {
         "benchmark": config.benchmark_name,
-        "model_artifact": str(config.model_artifact),
+        "model_artifact": portable_artifact_path(config.model_artifact),
         "latency_scope": "model_inference",
         "warmup_runs": config.warmup_runs,
         "inputs_count": len(BENCHMARK_TEXTS),

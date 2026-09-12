@@ -234,35 +234,35 @@ A conversão para denso não foi retirada da medição porque faz parte do camin
 ### Baseline
 
 ```text
-mean       2.857512 ms
-p50        2.676100 ms
-p95        3.920180 ms
-min        2.370200 ms
-max        5.780900 ms
-throughput 349.954737 req/s
+mean       2.958672 ms
+p50        2.702200 ms
+p95        3.849020 ms
+min        2.388500 ms
+max        6.718400 ms
+throughput 337.989522 req/s
 ```
 
 ### ONNX
 
 ```text
-mean       2.923424 ms
-p50        2.661500 ms
-p95        4.257760 ms
-min        2.022600 ms
-max        27.063100 ms
-throughput 342.064624 req/s
+mean       2.860280 ms
+p50        2.393200 ms
+p95        5.123730 ms
+min        1.368800 ms
+max        19.612500 ms
+throughput 349.616121 req/s
 ```
 
 ## 10. Tabela comparativa
 
 | Métrica | Baseline | ONNX | Interpretação |
 |---|---:|---:|---|
-| mean | 2.8575 ms | 2.9234 ms | ONNX levemente pior |
-| p50 | 2.6761 ms | 2.6615 ms | praticamente equivalente |
-| p95 | 3.9202 ms | 4.2578 ms | ONNX pior |
-| min | 2.3702 ms | 2.0226 ms | ONNX melhor no mínimo |
-| max | 5.7809 ms | 27.0631 ms | outlier no ONNX |
-| throughput | 349.95 req/s | 342.06 req/s | ONNX levemente pior |
+| mean | 2.9587 ms | 2.8603 ms | ONNX levemente melhor |
+| p50 | 2.7022 ms | 2.3932 ms | ONNX melhor |
+| p95 | 3.8490 ms | 5.1237 ms | ONNX pior |
+| min | 2.3885 ms | 1.3688 ms | ONNX melhor no mínimo |
+| max | 6.7184 ms | 19.6125 ms | maior variabilidade no ONNX |
+| throughput | 337.99 req/s | 349.62 req/s | ONNX levemente melhor |
 
 ## 11. Speedup
 
@@ -275,9 +275,9 @@ speedup = baseline_latency / optimized_latency
 Resultado:
 
 ```text
-mean_speedup = 0.9774539x
-p50_speedup  = 1.0054856x
-p95_speedup  = 0.9207142x
+mean_speedup = 1.0343993x
+p50_speedup  = 1.1291158x
+p95_speedup  = 0.7512144x
 ```
 
 Interpretação:
@@ -290,13 +290,15 @@ speedup < 1.0 -> otimizado mais lento
 
 Portanto:
 
-- média: pequena regressão;
-- mediana: praticamente empate;
-- p95: regressão mais perceptível.
+- média: pequena melhora no ONNX;
+- mediana: melhora no ONNX;
+- p95: regressão significativa;
+- throughput: pequena melhora;
+- latência de cauda: pior e mais variável no ONNX.
 
 ## 12. Conclusão
 
-O backend ONNX preservou equivalência funcional, porém não apresentou ganho material de latência.
+O backend ONNX preservou equivalência funcional e apresentou ganho em média e p50 nesta execução pareada, porém não apresentou ganho consistente em toda a distribuição de latência. O p95 piorou de forma relevante e o backend ONNX mostrou maior variabilidade.
 
 Isso é compatível com as características do modelo:
 
@@ -312,9 +314,11 @@ Assim:
 ganho potencial no classificador
 -
 custo de preparação do tensor
-≈
-ganho líquido nulo ou negativo
+=
+benefício variável conforme a métrica observada
 ```
+
+Como não houve ganho consistente suficiente para justificar a troca do backend padrão, a API final permanece utilizando sklearn. O ONNX é mantido como alternativa validada, entregue e benchmarkada.
 
 ## 13. Por que o resultado não foi alterado
 
@@ -330,15 +334,20 @@ Não foram adotadas as seguintes práticas:
 - aumentar tolerância de equivalência;
 - reportar somente a métrica favorável.
 
-O resultado final foi preservado mesmo sendo desfavorável ao ONNX.
+O resultado final foi preservado integralmente: favorável ao ONNX em média/p50, mas desfavorável em p95 e variabilidade.
 
 ## 14. Artefatos
 
+Como evidência da entrega final, são versionados:
+
 ```text
+artifacts/models/optimized_model.onnx
 artifacts/benchmarks/baseline_latency.json
 artifacts/benchmarks/optimized_latency.json
 artifacts/benchmarks/latency_comparison.json
 ```
+
+O baseline sklearn, `evaluation.json` e demais artefatos intermediários continuam gerados localmente e ignorados pelo Git.
 
 Código:
 
@@ -400,9 +409,11 @@ Conversão final: LogisticRegression
 Preprocessing: TfidfVectorizer sklearn
 Equivalência: validada
 Benchmark: 20 warm-ups + 500 medições + 5 textos
-Mean baseline: 2.8575 ms
-Mean ONNX: 2.9234 ms
-Mean speedup: 0.9775x
-Resultado: sem ganho material de latência
-Conclusão: otimização funcionalmente correta, mas não vantajosa em performance neste cenário
+Mean baseline: 2.9587 ms
+Mean ONNX: 2.8603 ms
+Mean speedup: 1.0344x
+p50 speedup: 1.1291x
+p95 speedup: 0.7512x
+Resultado: ganho em média/p50, regressão no p95
+Conclusão: otimização funcionalmente correta, mas sem ganho consistente suficiente para substituir sklearn na API
 ```

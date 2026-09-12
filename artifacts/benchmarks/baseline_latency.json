@@ -1,0 +1,19 @@
+{
+  "benchmark": "baseline_model_inference",
+  "model_artifact": "artifacts/models/baseline_pipeline.joblib",
+  "latency_scope": "model_inference",
+  "warmup_runs": 20,
+  "inputs_count": 5,
+  "mean_ms": 2.958671599975787,
+  "p50_ms": 2.7021999994758517,
+  "p95_ms": 3.849020008055958,
+  "min_ms": 2.388499997323379,
+  "max_ms": 6.71840000723023,
+  "throughput_requests_per_second": 337.9895220571907,
+  "measured_runs": 500,
+  "environment": {
+    "python_version": "3.12.2",
+    "platform": "Windows-10-10.0.19045-SP0",
+    "processor": "Intel64 Family 6 Model 69 Stepping 1, GenuineIntel"
+  }
+}

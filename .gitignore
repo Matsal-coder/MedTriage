@@ -42,4 +42,16 @@ data/processed/*
 !data/processed/.gitkeep
 
 # Generated ML artifacts
-artifacts/
+artifacts/*
+
+# Keep final optimized model
+!artifacts/models/
+artifacts/models/*
+!artifacts/models/optimized_model.onnx
+
+# Keep final benchmark evidence
+!artifacts/benchmarks/
+artifacts/benchmarks/*
+!artifacts/benchmarks/baseline_latency.json
+!artifacts/benchmarks/optimized_latency.json
+!artifacts/benchmarks/latency_comparison.json
