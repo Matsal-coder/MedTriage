@@ -2,86 +2,110 @@
 
 ## 1. Objetivo
 
-O MedTriage MLOps é um projeto acadêmico para classificação de urgência em textos médicos usando as classes `normal`, `attention` e `urgent`.
+O MedTriage MLOps é um projeto acadêmico para classificação de urgência em textos médicos usando as classes:
 
-Essas classes são uma proxy acadêmica derivada do Medical Abstracts Text Classification Corpus e não representam um protocolo clínico validado.
+```text
+normal
+attention
+urgent
+```
 
-## 2. Estado atual ao final do Bloco 4
+Essas classes são uma proxy acadêmica derivada do Medical Abstracts Text Classification Corpus e não representam protocolo clínico validado.
+
+## 2. Arquitetura final
 
 ```text
                          Git push / Pull Request
                                   ↓
-                           GitHub Actions
-                       ↙                    ↘
-             quality-and-build       airflow-dag-validation
-                     ↓                       ↓
-          Ruff / pytest / Docker       Airflow DAG checks
+                            GitHub Actions
+                        ↙                    ↘
+              quality-and-build       airflow-dag-validation
+                      ↓                       ↓
+           Ruff / pytest / Docker       Airflow DAG checks
 
 
-Medical Abstracts TC Corpus
-             ↓
-      data/loader.py
-             ↓
-    data/validation.py
-             ↓
-       triage_label
-             ↓
-   train / validation / test
-             ↓
-       Apache Airflow
-             ↓
-        validate_data
-             ↓
-         run_training()
-             ↓
-  TF-IDF + Logistic Regression
-             ↓
- baseline_pipeline.joblib
-        ↙              ↘
-run_evaluation()    predict.py
-      ↓                ↓
-evaluation.json       FastAPI
-      ↓             ↙    ↓     ↘
-validate_artifacts /health /predict /metrics
-                              ↓
-                         Prometheus
-                              ↓
-                           Grafana
-
-baseline_pipeline.joblib
-          ↓
-benchmarking/latency.py
-          ↓
-baseline_latency.json
+Medical Abstracts Text Classification Corpus
+                    ↓
+            data/loader.py
+                    ↓
+          data/validation.py
+                    ↓
+              triage_label
+                    ↓
+        treino / validação / teste
+                    ↓
+              Apache Airflow
+                    ↓
+              validate_data
+                    ↓
+               train_model
+                    ↓
+          TF-IDF + LogisticRegression
+                    ↓
+       baseline_pipeline.joblib
+             ↙              ↘
+   evaluation.py         inference
+        ↓                  ↙   ↘
+ evaluation.json    sklearn    ONNX
+                        ↓       ↓
+                     FastAPI / benchmark
+                          ↓
+               /health /predict /metrics
+                          ↓
+                      Prometheus
+                          ↓
+                        Grafana
 ```
 
-O Bloco 4 adiciona observabilidade HTTP sem alterar os contratos funcionais de `/health` e `/predict`.
-
-## 3. Arquitetura alvo
+A otimização ONNX final utiliza uma arquitetura híbrida:
 
 ```text
-Dataset
+texto
   ↓
-Airflow
+TfidfVectorizer sklearn
   ↓
-Treinamento
+matriz CSR
   ↓
-Modelo
+conversão float32 + dense
   ↓
-Scikit-learn / ONNX
+LogisticRegression ONNX Runtime
   ↓
-FastAPI
-  ↓
-Docker / Docker Compose
-  ↓
-/predict | /health | /metrics
-                        ↓
-                    Prometheus
-                        ↓
-                     Grafana
+prediction + probabilities
 ```
 
-GitHub Actions atua transversalmente sobre qualidade, testes, Docker e validação da DAG.
+## 3. Princípios arquiteturais
+
+### Separação de responsabilidades
+
+- `data/`: carregamento e validação;
+- `modeling/`: treino, avaliação, inferência e exportação ONNX;
+- `benchmarking/`: medição de latência e comparação;
+- `api/`: contrato HTTP e instrumentação;
+- `monitoring/`: geração de tráfego;
+- `ci/`: artefato sintético para validações;
+- `dags/`: apenas orquestração;
+- `config.py`: centralização de paths e parâmetros.
+
+### Airflow
+
+Princípio:
+
+```text
+Airflow sabe QUANDO executar.
+MedTriage sabe COMO executar.
+```
+
+A DAG não duplica lógica de machine learning.
+
+### Observabilidade
+
+Prometheus/Grafana observam a API sem alterar o contrato funcional de `/health` e `/predict`.
+
+### Otimização
+
+A corretude tem prioridade sobre speedup.
+
+Uma conversão ONNX só é aceita se preservar o comportamento do baseline dentro de tolerância definida.
 
 ## 4. Camada de dados
 
@@ -149,7 +173,7 @@ Responsabilidades:
 - criar `triage_label`;
 - criar split reproduzível.
 
-## 6. Validação
+## 6. Validação de dados
 
 Arquivo:
 
@@ -163,7 +187,7 @@ Valida:
 - colunas obrigatórias;
 - nulls;
 - abstracts vazios;
-- labels válidos.
+- labels válidas.
 
 ## 7. Split
 
@@ -200,19 +224,27 @@ Centraliza:
 - colunas;
 - nomes dos artefatos;
 - parâmetros do baseline;
-- parâmetros do benchmark.
+- paths ONNX;
+- parâmetros de benchmark;
+- nomes dos artefatos de comparação.
 
 ## 9. Modelo baseline
 
+Pipeline:
+
 ```text
 TfidfVectorizer
-+
+        +
 LogisticRegression
 ```
 
-Persistidos em um único `sklearn.pipeline.Pipeline`.
+Persistência:
 
-Parâmetros:
+```text
+artifacts/models/baseline_pipeline.joblib
+```
+
+Parâmetros principais:
 
 ```text
 ngram_range = (1, 2)
@@ -283,7 +315,7 @@ Função reutilizada pelo Airflow:
 run_evaluation()
 ```
 
-## 12. Inferência
+## 12. Inferência baseline
 
 Arquivo:
 
@@ -293,14 +325,125 @@ src/medtriage/modeling/predict.py
 
 Responsabilidades:
 
-- carregar modelo;
-- inferir classe;
-- retornar probabilidades;
+- carregar pipeline sklearn;
+- executar predição;
+- obter probabilidades;
 - medir latência de inferência.
 
-O modelo é carregado uma única vez no lifespan da FastAPI.
+O serviço é carregado uma única vez no lifespan da FastAPI.
 
-## 13. FastAPI
+## 13. Exportação ONNX
+
+Arquivo:
+
+```text
+src/medtriage/modeling/onnx_export.py
+```
+
+A primeira abordagem tentou converter:
+
+```text
+TfidfVectorizer + LogisticRegression
+```
+
+inteiramente para ONNX.
+
+Embora o artefato fosse estruturalmente válido e carregável pelo ONNX Runtime, os testes identificaram divergência probabilística de até aproximadamente:
+
+```text
+0.0689
+```
+
+A arquitetura foi rejeitada.
+
+A versão final exporta apenas:
+
+```text
+LogisticRegression
+```
+
+Input real:
+
+```text
+features: [None, 186957] tensor(float)
+```
+
+Outputs:
+
+```text
+label         [None]    tensor(string)
+probabilities [None, 3] tensor(float)
+```
+
+Provider:
+
+```text
+CPUExecutionProvider
+```
+
+## 14. Inferência ONNX final
+
+Arquivo:
+
+```text
+src/medtriage/modeling/onnx_predict.py
+```
+
+Fluxo:
+
+```text
+texto
+ ↓
+TfidfVectorizer sklearn
+ ↓
+sparse CSR float64
+ ↓
+astype(float32)
+ ↓
+toarray()
+ ↓
+ONNX Runtime
+ ↓
+LogisticRegression ONNX
+ ↓
+label + probabilities
+```
+
+O runtime carrega:
+
+```text
+baseline_pipeline.joblib
+```
+
+somente para reutilizar o `TfidfVectorizer` e as classes treinadas.
+
+O classificador sklearn não é executado no backend ONNX.
+
+## 15. Equivalência
+
+Arquivo de testes:
+
+```text
+tests/unit/test_onnx_equivalence.py
+```
+
+Critérios:
+
+- mesmas classes;
+- mesma ordem das classes;
+- mesma classe prevista;
+- mesmas labels de probabilidades;
+- probabilidades dentro de `atol=1e-5`.
+
+Resultado:
+
+```text
+19 testes de equivalência aprovados
+```
+
+A arquitetura híbrida foi adotada somente após passar por esse gate.
+
+## 16. FastAPI
 
 Arquivo:
 
@@ -316,16 +459,17 @@ POST /predict
 GET  /metrics
 ```
 
-Contratos funcionais existentes:
+Contrato de `/predict`:
 
 ```text
-/health  -> status da aplicação
-/predict -> classificação, probabilidades e inference_time_ms
+prediction
+probabilities
+inference_time_ms
 ```
 
-O endpoint `/metrics` pertence à camada de observabilidade.
+O contrato externo permanece estável ao longo das evoluções do projeto.
 
-## 14. Instrumentação Prometheus
+## 17. Instrumentação Prometheus
 
 Arquivo:
 
@@ -333,7 +477,7 @@ Arquivo:
 src/medtriage/api/metrics.py
 ```
 
-Estratégia escolhida:
+Estratégia:
 
 ```text
 middleware próprio FastAPI
@@ -345,36 +489,22 @@ Fluxo:
 
 ```text
 request
-   ↓
+ ↓
 middleware
-   ↓
+ ↓
 endpoint
-   ↓
+ ↓
 response
-   ↓
-middleware registra:
-- request count
-- duração HTTP
-- erros
+ ↓
+métricas
 ```
 
-Motivos da escolha:
-
-- instrumentação centralizada;
-- evita duplicação entre endpoints;
-- baixo acoplamento;
-- sem biblioteca automática adicional;
-- controle explícito das labels;
-- fácil preservação durante evolução futura do modelo.
-
-## 15. Métricas
-
-### medtriage_http_requests_total
-
-Tipo:
+Métricas:
 
 ```text
-Counter
+medtriage_http_requests_total
+medtriage_http_request_duration_seconds
+medtriage_http_errors_total
 ```
 
 Labels:
@@ -385,84 +515,7 @@ route
 status_code
 ```
 
-Significado:
-
-```text
-quantidade de requisições HTTP processadas pela API
-```
-
-### medtriage_http_request_duration_seconds
-
-Tipo:
-
-```text
-Histogram
-```
-
-Labels:
-
-```text
-method
-route
-```
-
-Significado:
-
-```text
-duração HTTP end-to-end da requisição
-```
-
-### medtriage_http_errors_total
-
-Tipo:
-
-```text
-Counter
-```
-
-Labels:
-
-```text
-method
-route
-status_code
-```
-
-Significado:
-
-```text
-quantidade de respostas HTTP classificadas como erro
-```
-
-Regra:
-
-```text
-status_code >= 400
-```
-
-## 16. Estratégia de cardinalidade
-
-Não são usados como labels:
-
-- conteúdo do request;
-- texto médico;
-- IDs livres;
-- mensagens arbitrárias de erro;
-- qualquer dado sensível.
-
-Rotas reconhecidas usam o path normalizado do FastAPI.
-
-Rotas inexistentes usam:
-
-```text
-route="__unmatched__"
-```
-
-Isso evita criar uma nova série Prometheus para cada path arbitrário.
-
-## 17. Rotas excluídas
-
-Não são instrumentadas:
+Rotas excluídas:
 
 ```text
 /metrics
@@ -470,134 +523,9 @@ Não são instrumentadas:
 /openapi.json
 ```
 
-Motivos:
+## 18. Prometheus
 
-- `/metrics` é consultada automaticamente pelo Prometheus;
-- `/docs` e `/openapi.json` são rotas de suporte/documentação;
-- a exclusão reduz ruído;
-- evita o Prometheus alterar as próprias métricas a cada scrape.
-
-## 18. Latência
-
-Há três conceitos distintos no projeto.
-
-### Inferência
-
-```text
-inference_time_ms
-```
-
-Medida pelo serviço de predição.
-
-### HTTP end-to-end
-
-```text
-medtriage_http_request_duration_seconds
-```
-
-Medida pelo middleware.
-
-### Benchmark do modelo
-
-```text
-artifacts/benchmarks/baseline_latency.json
-```
-
-Gerado por:
-
-```text
-src/medtriage/benchmarking/latency.py
-```
-
-O benchmark será usado no Bloco 5 para comparação com a versão otimizada.
-
-## 19. Docker
-
-O Dockerfile:
-
-- usa `python:3.12.2-slim`;
-- instala dependências;
-- copia a aplicação;
-- copia o modelo;
-- usa usuário não-root;
-- inicia Uvicorn.
-
-Contrato de runtime:
-
-```text
-artifacts/models/baseline_pipeline.joblib
-```
-
-O modelo real deve existir localmente antes do build.
-
-## 20. Artefato temporário para CI
-
-Problema:
-
-O modelo real é ignorado pelo Git, mas o Dockerfile precisa dele.
-
-Solução:
-
-```text
-src/medtriage/ci/prepare_model.py
-```
-
-Esse módulo:
-
-- cria dados sintéticos mínimos;
-- reutiliza treino;
-- reutiliza persistência;
-- produz o artefato esperado pelo Dockerfile.
-
-O artefato é temporário e exclusivo do CI.
-
-Ele não deve substituir o modelo real na execução local da stack.
-
-## 21. Docker Compose
-
-Arquivo:
-
-```text
-docker-compose.yml
-```
-
-Serviços:
-
-```text
-api
-prometheus
-grafana
-```
-
-Portas:
-
-```text
-api         8000
-prometheus  9090
-grafana     3000
-```
-
-Fluxo de rede:
-
-```text
-grafana
-   ↓
-http://prometheus:9090
-   ↓
-Prometheus
-   ↓
-http://api:8000/metrics
-   ↓
-FastAPI
-```
-
-O projeto usa a rede default criada automaticamente pelo Docker Compose.
-
-Não há necessidade atual de redes adicionais.
-
-## 22. Prometheus
-
-Imagem:
+Docker image:
 
 ```text
 prom/prometheus:v3.5.0
@@ -606,294 +534,61 @@ prom/prometheus:v3.5.0
 Configuração:
 
 ```text
-monitoring/prometheus/prometheus.yml
-```
-
-Configuração efetiva:
-
-```text
 scrape_interval = 5s
-job_name        = medtriage-api
-target          = api:8000
-metrics_path    = /metrics
+job_name = medtriage-api
+target = api:8000
+metrics_path = /metrics
 ```
 
-Estado validado no Bloco 4:
+## 19. Grafana
 
-```text
-medtriage-api -> UP
-```
-
-O hostname `api` vem do nome do serviço no Docker Compose.
-
-## 23. Grafana
-
-Imagem:
+Docker image:
 
 ```text
 grafana/grafana:11.6.0
 ```
 
-URL:
-
-```text
-http://localhost:3000
-```
-
-Credenciais locais:
-
-```text
-admin / admin
-```
-
-Essas credenciais existem apenas para demonstração local.
-
-## 24. Provisioning do Grafana
-
 Datasource:
 
 ```text
-monitoring/grafana/provisioning/datasources/datasource.yml
+UID: prometheus
+URL: http://prometheus:9090
 ```
 
-Configuração:
-
-```text
-name       = Prometheus
-uid        = prometheus
-type       = prometheus
-url        = http://prometheus:9090
-isDefault  = true
-editable   = false
-```
-
-Dashboard provider:
-
-```text
-monitoring/grafana/provisioning/dashboards/dashboards.yml
-```
-
-Provider:
-
-```text
-name   = MedTriage
-folder = MedTriage
-path   = /var/lib/grafana/dashboards
-```
-
-O provisioning garante:
-
-```text
-docker compose up
-       ↓
-Grafana inicia
-       ↓
-Prometheus já existe como datasource
-       ↓
-dashboard MedTriage já existe
-```
-
-Não é necessária configuração manual pela interface.
-
-## 25. Dashboard
-
-Arquivo versionado:
-
-```text
-monitoring/grafana/dashboards/medtriage-dashboard.json
-```
-
-Título:
+Dashboard:
 
 ```text
 MedTriage API Monitoring
+UID: medtriage-api-monitoring
 ```
 
-UID:
+Painéis:
+
+1. Total de Requisições
+2. Latência HTTP p95
+3. Taxa de Erro
+
+## 20. Docker Compose
+
+Serviços:
 
 ```text
-medtriage-api-monitoring
+api        :8000
+prometheus :9090
+grafana    :3000
 ```
 
-Refresh:
+Fluxo:
 
 ```text
-5s
+API
+ ↓ /metrics
+Prometheus
+ ↓
+Grafana
 ```
 
-Janela padrão:
-
-```text
-últimos 15 minutos
-```
-
-### Painel 1 — Total de Requisições
-
-Tipo:
-
-```text
-Stat
-```
-
-Query:
-
-```promql
-sum(medtriage_http_requests_total)
-```
-
-### Painel 2 — Latência HTTP p95
-
-Tipo:
-
-```text
-Time series
-```
-
-Query:
-
-```promql
-histogram_quantile(
-  0.95,
-  sum by (le) (
-    rate(medtriage_http_request_duration_seconds_bucket[5m])
-  )
-)
-```
-
-### Painel 3 — Taxa de Erro
-
-Tipo:
-
-```text
-Stat
-```
-
-Query:
-
-```promql
-100
-*
-sum(rate(medtriage_http_errors_total[5m]))
-/
-clamp_min(
-  sum(rate(medtriage_http_requests_total[5m])),
-  0.000000001
-)
-```
-
-A divisão usa `clamp_min` para evitar divisão por zero em períodos sem tráfego.
-
-## 26. Geração de tráfego
-
-Entry point:
-
-```text
-scripts/generate_requests.py
-```
-
-Implementação:
-
-```text
-src/medtriage/monitoring/traffic.py
-```
-
-A separação mantém:
-
-```text
-scripts/
-   ↓
-interface de execução
-
-src/medtriage/
-   ↓
-lógica reutilizável e testável
-```
-
-Parâmetros:
-
-```text
---base-url
---requests
---delay
---invalid-ratio
-```
-
-Defaults:
-
-```text
-base_url      = http://127.0.0.1:8000
-requests      = 100
-delay         = 0.05
-invalid_ratio = 0.1
-```
-
-Distribuição conceitual:
-
-```text
-request
-  ├── /predict inválido
-  ├── /health
-  └── /predict válido
-```
-
-O objetivo não é executar load testing de produção.
-
-O objetivo é gerar tráfego suficiente para:
-
-- popular as métricas;
-- demonstrar contagem de requests;
-- demonstrar latência;
-- demonstrar taxa de erro;
-- tornar o dashboard observável durante a apresentação.
-
-## 27. Testes da observabilidade
-
-Integração:
-
-```text
-tests/integration/test_metrics.py
-```
-
-Valida:
-
-- `/metrics` retorna 200;
-- content type Prometheus;
-- contador de requests;
-- observação do histograma;
-- contador de erros;
-- exclusão de `/metrics`;
-- exclusão de `/docs`;
-- exclusão de `/openapi.json`;
-- label limitada para rota desconhecida.
-
-Unitários:
-
-```text
-tests/unit/test_traffic_generator.py
-```
-
-Valida:
-
-- classificação de sucesso;
-- classificação de erro 4xx;
-- classificação de erro 5xx;
-- argumentos válidos;
-- rejeição de argumentos inválidos.
-
-Ao final do Bloco 4:
-
-```text
-55 passed
-```
-
-Ruff:
-
-```text
-check -> OK
-format --check -> OK
-```
-
-## 28. GitHub Actions
+## 21. CI/CD
 
 Arquivo:
 
@@ -901,24 +596,39 @@ Arquivo:
 .github/workflows/ci.yml
 ```
 
-O workflow continua com dois jobs:
+Jobs:
 
 ```text
 quality-and-build
 airflow-dag-validation
 ```
 
-Os novos testes de observabilidade entram automaticamente em:
+### quality-and-build
 
-```text
-poetry run pytest
-```
+Executa:
 
-O Bloco 4 não adiciona Compose ao CI porque isso não é necessário para cumprir o escopo.
+- checkout;
+- Python 3.12.2;
+- Poetry 2.4.3;
+- instalação;
+- Ruff;
+- format check;
+- pytest;
+- geração de modelo sintético;
+- Docker build.
 
-## 29. Airflow
+### airflow-dag-validation
 
-Runtime separado do Poetry principal.
+Executa:
+
+- instalação isolada do Airflow;
+- inicialização da base;
+- serialização de DAGs;
+- verificação de import errors;
+- validação da DAG;
+- validação das tasks.
+
+## 22. Airflow
 
 DAG:
 
@@ -930,175 +640,153 @@ Fluxo:
 
 ```text
 validate_data
-  ↓
+ ↓
 train_model
-  ↓
+ ↓
 evaluate_model
-  ↓
+ ↓
 validate_artifacts
 ```
 
-Princípio preservado:
+Configuração:
 
 ```text
-Airflow sabe QUANDO executar.
-MedTriage sabe COMO executar.
+schedule=None
+catchup=False
 ```
 
-A observabilidade da API não altera a arquitetura do pipeline de treinamento.
+## 23. Benchmark
 
-## 30. Fluxo operacional completo
+Arquivos:
 
 ```text
-1. Treinar modelo
-   ↓
+src/medtriage/benchmarking/latency.py
+src/medtriage/benchmarking/comparison.py
+```
+
+Metodologia:
+
+```text
+5 textos fixos
+20 warm-ups
+500 medições
+mesma máquina
+mesmo escopo model_inference
+modelos carregados previamente
+```
+
+O benchmark final executa baseline e ONNX na mesma sessão de comparação.
+
+Artefatos:
+
+```text
+baseline_latency.json
+optimized_latency.json
+latency_comparison.json
+```
+
+## 24. Resultado final do benchmark
+
+```text
+Baseline mean     2.8575 ms
+ONNX mean         2.9234 ms
+Mean speedup      0.9775x
+
+Baseline p50      2.6761 ms
+ONNX p50          2.6615 ms
+p50 speedup       1.0055x
+
+Baseline p95      3.9202 ms
+ONNX p95          4.2578 ms
+p95 speedup       0.9207x
+```
+
+Interpretação:
+
+- p50 praticamente equivalente;
+- mean levemente pior no ONNX;
+- p95 pior no ONNX;
+- throughput também levemente inferior.
+
+O backend ONNX não produziu ganho material de performance.
+
+## 25. Por que ONNX não acelerou este caso
+
+A regressão logística original possui baixo custo.
+
+O backend otimizado acrescenta:
+
+```text
+CSR sparse
+ ↓
+float32
+ ↓
+dense tensor de 186.957 features
+ ↓
+ONNX Runtime
+```
+
+O custo dessa conversão reduz ou elimina o benefício do runtime ONNX para um classificador linear simples.
+
+Isso não invalida a técnica; demonstra que otimização deve ser validada empiricamente no contexto real.
+
+## 26. Estado de qualidade
+
+Última suíte completa observada:
+
+```text
+84 passed
+```
+
+Também:
+
+```text
+ruff check: OK
+ruff format --check: OK
+```
+
+## 27. Limitações arquiteturais
+
+- proxy acadêmica sem validação clínica;
+- dataset não versionado;
+- artefatos de modelo não versionados;
+- inferência otimizada depende do vectorizer sklearn;
+- conversão CSR -> dense possui overhead;
+- benchmark depende do hardware local;
+- modelo simples limita potencial de ganho com ONNX;
+- Airflow é mantido em runtime isolado;
+- execução é CPU-only.
+
+## 28. Mapa final de componentes
+
+```text
+Dataset
+  ↓
+Data Loader / Validation
+  ↓
+Training
+  ↓
 baseline_pipeline.joblib
+  ├───────────────┬──────────────────┐
+  ↓               ↓                  ↓
+Evaluation     sklearn API       ONNX export
+  ↓               ↓                  ↓
+evaluation.json  /predict       optimized_model.onnx
+                                    ↓
+                         sklearn TF-IDF + ONNX LR
+                                    ↓
+                                benchmark
+                                    ↓
+                         latency_comparison.json
 
-2. docker compose up --build
-   ↓
-API sobe
-   ↓
-Prometheus sobe
-   ↓
-Grafana sobe
 
-3. Prometheus coleta /metrics
-   ↓
-target medtriage-api fica UP
+GitHub Actions ───── qualidade / Docker / Airflow
 
-4. Grafana consulta Prometheus
-   ↓
-dashboard provisionado exibe dados
-
-5. generate_requests.py
-   ↓
-/health + /predict válido + /predict inválido
-   ↓
-métricas mudam
-   ↓
-dashboard reage
-```
-
-## 31. Decisões arquiteturais do Bloco 4
-
-### Middleware próprio
-
-Escolhido em vez de instrumentação manual por endpoint ou biblioteca automática externa.
-
-Motivo:
-
-- centralização;
-- simplicidade;
-- baixo acoplamento;
-- controle de labels.
-
-### Erro = status >= 400
-
-Motivo:
-
-- regra simples;
-- captura 4xx e 5xx;
-- permite demonstrar erros controlados.
-
-### Exclusão de rotas de infraestrutura
-
-Excluídas:
-
-```text
+FastAPI
+  ↓
 /metrics
-/docs
-/openapi.json
+  ↓
+Prometheus
+  ↓
+Grafana
 ```
-
-Motivo:
-
-- reduzir ruído;
-- evitar auto-instrumentação do scrape;
-- aproximar as métricas do uso funcional.
-
-### Compose simples
-
-Escolha:
-
-- rede default;
-- sem healthchecks adicionais;
-- sem restart policies;
-- sem persistência adicional;
-- sem serviços extras.
-
-Motivo:
-
-- evitar overengineering;
-- manter stack reprodutível e adequada ao Tech Challenge.
-
-### Provisioning automático
-
-Datasource e dashboard são versionados.
-
-Motivo:
-
-- reprodutibilidade;
-- facilidade de avaliação;
-- nenhuma configuração manual necessária.
-
-## 32. Limitações deliberadas
-
-Fora do Bloco 4:
-
-- Alertmanager;
-- Loki;
-- OpenTelemetry;
-- Elasticsearch;
-- Kubernetes;
-- drift monitoring;
-- autenticação de produção;
-- persistência dedicada;
-- monitoramento avançado de ML.
-
-Esses itens não são necessários para os requisitos atuais.
-
-## 33. Continuidade para o Bloco 5
-
-O Bloco 5 deverá implementar:
-
-- ONNX;
-- otimização;
-- benchmark comparativo;
-- documentação final;
-- vídeo STAR.
-
-Regras de continuidade:
-
-1. preservar `/health`;
-2. preservar `/predict`;
-3. preservar `/metrics`;
-4. preservar os nomes das métricas;
-5. preservar as labels;
-6. evitar duplicar instrumentação;
-7. preservar o Docker Compose;
-8. manter Prometheus e Grafana funcionais;
-9. usar o benchmark baseline existente como referência;
-10. atualizar a inferência sem quebrar o contrato de resposta.
-
-Arquivos que provavelmente serão impactados:
-
-```text
-src/medtriage/modeling/predict.py
-src/medtriage/config.py
-src/medtriage/benchmarking/
-Dockerfile
-pyproject.toml
-poetry.lock
-README.md
-docs/architecture.md
-```
-
-Arquivos de observabilidade que idealmente devem permanecer estáveis:
-
-```text
-src/medtriage/api/metrics.py
-monitoring/prometheus/prometheus.yml
-monitoring/grafana/provisioning/
-```
-
-O dashboard só deverá ser alterado se houver uma necessidade real de visualizar novas métricas.
