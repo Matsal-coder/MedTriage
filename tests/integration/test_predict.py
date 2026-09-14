@@ -71,7 +71,7 @@ def test_predict_rejects_empty_text(monkeypatch: Any) -> None:
             json={"text": ""},
         )
 
-    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
 
 def test_predict_rejects_whitespace_only_text(monkeypatch: Any) -> None:
@@ -87,4 +87,4 @@ def test_predict_rejects_whitespace_only_text(monkeypatch: Any) -> None:
             json={"text": "   "},
         )
 
-    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT

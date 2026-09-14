@@ -28,3 +28,23 @@ docs
 build
 dist
 *.egg-info
+
+# CI and repository metadata
+.github
+
+# Local datasets
+data
+
+# Airflow runtime
+airflow
+dags
+
+# Development and operational utilities
+scripts
+monitoring
+
+# Artifacts not required by the API image
+artifacts/benchmarks
+artifacts/evaluation
+artifacts/models/optimized_model.onnx
+artifacts/models/evaluation.json

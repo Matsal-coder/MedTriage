@@ -132,7 +132,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "100 * sum(rate(medtriage_http_errors_total[5m])) / clamp_min(sum(rate(medtriage_http_requests_total[5m])), 0.000000001)",
+          "expr": "100 * (sum(rate(medtriage_http_errors_total[5m])) or vector(0)) / clamp_min((sum(rate(medtriage_http_requests_total[5m])) or vector(0)), 0.000000001)",
           "instant": true,
           "legendFormat": "Error rate",
           "range": false,
