@@ -55,3 +55,8 @@ artifacts/benchmarks/*
 !artifacts/benchmarks/baseline_latency.json
 !artifacts/benchmarks/optimized_latency.json
 !artifacts/benchmarks/latency_comparison.json
+
+# Versioned data-quality diagnostic
+!artifacts/evaluation/
+artifacts/evaluation/*
+!artifacts/evaluation/data_overlap_analysis.json

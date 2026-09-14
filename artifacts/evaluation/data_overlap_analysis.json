@@ -1,0 +1,92 @@
+{
+  "scope": "medtriage_dataset_overlap_analysis",
+  "methodology": {
+    "text_column": "medical_abstract",
+    "original_target_column": "condition_label",
+    "triage_target_column": "triage_label",
+    "split_source": "existing split_training_data implementation",
+    "baseline_results_preserved": true
+  },
+  "splits": {
+    "official_train": {
+      "rows": 11550,
+      "unique_texts": 9445,
+      "rows_in_duplicated_groups": 4061,
+      "duplicates_after_first": 2105
+    },
+    "effective_train": {
+      "rows": 9240,
+      "unique_texts": 7892,
+      "rows_in_duplicated_groups": 2614,
+      "duplicates_after_first": 1348
+    },
+    "validation": {
+      "rows": 2310,
+      "unique_texts": 2212,
+      "rows_in_duplicated_groups": 196,
+      "duplicates_after_first": 98
+    },
+    "official_test": {
+      "rows": 2888,
+      "unique_texts": 2770,
+      "rows_in_duplicated_groups": 231,
+      "duplicates_after_first": 118
+    },
+    "full_corpus": {
+      "rows": 14438,
+      "unique_texts": 11227,
+      "rows_in_duplicated_groups": 6140,
+      "duplicates_after_first": 3211
+    }
+  },
+  "overlap": {
+    "effective_train_to_validation": {
+      "candidate_rows_with_text_in_reference": 677,
+      "shared_unique_texts": 659
+    },
+    "effective_train_to_official_test": {
+      "candidate_rows_with_text_in_reference": 846,
+      "shared_unique_texts": 828
+    },
+    "validation_to_official_test": {
+      "candidate_rows_with_text_in_reference": 199,
+      "shared_unique_texts": 195
+    }
+  },
+  "multiple_labels": {
+    "official_train_condition_label": {
+      "texts_with_multiple_labels": 1956,
+      "rows_involved": 4061,
+      "label_count_distribution": {
+        "2": 1810,
+        "3": 143,
+        "4": 3
+      }
+    },
+    "official_train_triage_label": {
+      "texts_with_multiple_labels": 1880,
+      "rows_involved": 3909,
+      "label_count_distribution": {
+        "2": 1760,
+        "3": 120
+      }
+    },
+    "full_corpus_condition_label": {
+      "texts_with_multiple_labels": 2929,
+      "rows_involved": 6140,
+      "label_count_distribution": {
+        "2": 2653,
+        "3": 270,
+        "4": 6
+      }
+    },
+    "full_corpus_triage_label": {
+      "texts_with_multiple_labels": 2837,
+      "rows_involved": 5956,
+      "label_count_distribution": {
+        "2": 2620,
+        "3": 217
+      }
+    }
+  }
+}
