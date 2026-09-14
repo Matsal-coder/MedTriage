@@ -43,7 +43,7 @@ Principais componentes implementados:
 - testes de equivalência sklearn vs ONNX;
 - benchmark comparativo de latência;
 - cálculo de speedup;
-- 84 testes automatizados.
+- 89 testes automatizados.
 
 MLflow foi deliberadamente excluído da arquitetura deste projeto.
 
@@ -94,6 +94,8 @@ medtriage-mlops/
 │   │   ├── baseline_latency.json
 │   │   ├── optimized_latency.json
 │   │   └── latency_comparison.json
+│   ├── evaluation/
+│   │   └── data_overlap_analysis.json
 │   └── models/
 │       ├── baseline_pipeline.joblib
 │       ├── optimized_model.onnx
@@ -106,7 +108,9 @@ medtriage-mlops/
 ├── docs/
 │   ├── architecture.md
 │   ├── baseline-results.md
-│   └── latency-comparison.md
+│   ├── data-quality.md
+│   ├── latency-comparison.md
+│   └── reproducibility.md
 ├── monitoring/
 │   ├── prometheus/
 │   │   └── prometheus.yml
@@ -132,6 +136,9 @@ medtriage-mlops/
 │       ├── ci/
 │       │   └── prepare_model.py
 │       ├── data/
+│       │   ├── diagnostics.py
+│       │   ├── loader.py
+│       │   └── validation.py
 │       ├── modeling/
 │       │   ├── train.py
 │       │   ├── evaluate.py
@@ -161,6 +168,7 @@ artifacts/models/optimized_model.onnx
 artifacts/benchmarks/baseline_latency.json
 artifacts/benchmarks/optimized_latency.json
 artifacts/benchmarks/latency_comparison.json
+artifacts/evaluation/data_overlap_analysis.json
 ```
 
 O baseline `baseline_pipeline.joblib`, `evaluation.json` e demais artefatos gerados localmente permanecem ignorados.
@@ -173,6 +181,20 @@ poetry install
 
 O pacote `medtriage` é instalado a partir de `src/medtriage/`.
 
+
+## Reprodução a partir de clone limpo
+
+O procedimento completo para reproduzir o projeto — incluindo obtenção e
+verificação do dataset, treino, avaliação, diagnóstico de dados, export ONNX,
+benchmark, Docker, API, Prometheus e Grafana — está documentado em:
+
+```text
+docs/reproducibility.md
+```
+
+O guia registra também os SHA-256 dos três CSVs efetivamente utilizados nesta
+entrega.
+
 ## Qualidade e testes
 
 ```bash
@@ -184,7 +206,7 @@ poetry run ruff format --check .
 Estado atual:
 
 ```text
-84 passed
+89 passed
 ```
 
 Os warnings remanescentes são depreciações provenientes de dependências Starlette/AnyIO e não representam falhas funcionais do projeto.
@@ -204,6 +226,28 @@ medical_tc_train.csv
 medical_tc_test.csv
 medical_tc_labels.csv
 ```
+
+Fonte pública:
+
+```text
+https://github.com/sebischair/Medical-Abstracts-TC-Corpus
+```
+
+Os arquivos utilizados nesta entrega foram verificados por SHA-256:
+
+```text
+medical_tc_train.csv
+ad53aebc682d6b87a5647f619a079bb446d286fdc93bf0159b812418f5758609
+
+medical_tc_test.csv
+1eecea73c9ecad292c55e10403bd139fab9580545d6878482997c5564d51ac05
+
+medical_tc_labels.csv
+8a27ae03339c798103678efa8012f744a723ff71a80f2b2c1355ee249564adc5
+```
+
+O passo a passo completo para obtenção e verificação está em
+`docs/reproducibility.md`.
 
 Local:
 
@@ -311,6 +355,30 @@ urgent_recall     0.7675
 ```
 
 Esses resultados não devem ser interpretados como validação clínica.
+
+### Diagnóstico de qualidade de dados
+
+O projeto inclui um diagnóstico reproduzível para duplicação de textos,
+sobreposição entre conjuntos e textos associados a múltiplos rótulos.
+
+Execução:
+
+```bash
+poetry run python -m medtriage.data.diagnostics
+```
+
+Artefato versionado:
+
+```text
+artifacts/evaluation/data_overlap_analysis.json
+```
+
+Os principais achados e suas limitações estão documentados em
+`docs/data-quality.md`.
+
+A presença de textos repetidos reduz a independência entre algumas amostras,
+mas o projeto não afirma, de forma categórica, que houve inflação das métricas
+do baseline.
 
 ## API local
 
@@ -812,12 +880,6 @@ favoráveis.
 
 ## Artefatos de benchmark
 
-```text
-artifacts/benchmarks/baseline_latency.json
-artifacts/benchmarks/optimized_latency.json
-artifacts/benchmarks/latency_comparison.json
-```
-
 Os artefatos intermediários permanecem ignorados pelo Git. Como evidência da entrega final, são versionados explicitamente:
 
 ```text
@@ -825,6 +887,7 @@ artifacts/models/optimized_model.onnx
 artifacts/benchmarks/baseline_latency.json
 artifacts/benchmarks/optimized_latency.json
 artifacts/benchmarks/latency_comparison.json
+artifacts/evaluation/data_overlap_analysis.json
 ```
 
 ## Reproduzindo a conversão ONNX
@@ -857,7 +920,9 @@ O comando executa baseline e ONNX no mesmo ambiente e gera os artefatos de compa
 - o backend ONNX híbrido exige conversão de matriz esparsa para tensor denso;
 - benchmark local depende do hardware e da carga do sistema;
 - resultados de latência não devem ser generalizados para outras máquinas;
-- o dataset, o baseline sklearn e artefatos intermediários não são versionados; o modelo ONNX final e os JSONs de benchmark são versionados como evidência da entrega;
+- o dataset, o baseline sklearn e artefatos intermediários não são versionados;
+  o modelo ONNX final, os JSONs de benchmark e o diagnóstico de qualidade de
+  dados são versionados como evidência da entrega;
 - o Airflow local é executado em ambiente isolado do Poetry principal;
 - o projeto utiliza CPU e não depende de GPU.
 
@@ -947,6 +1012,10 @@ INSERIR LINK FINAL DO VÍDEO
 
 ## Execução resumida
 
+A sequência abaixo funciona como referência rápida. Para reprodução completa a
+partir de clone limpo, incluindo dataset, hashes, artefatos esperados e
+critérios de sucesso, consulte `docs/reproducibility.md`.
+
 Instalar:
 
 ```bash
@@ -963,6 +1032,12 @@ Avaliar:
 
 ```bash
 poetry run python -m medtriage.modeling.evaluate
+```
+
+Diagnóstico de dados:
+
+```bash
+poetry run python -m medtriage.data.diagnostics
 ```
 
 Converter para ONNX:
