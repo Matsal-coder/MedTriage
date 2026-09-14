@@ -178,14 +178,17 @@ A versão otimizada só foi considerada válida depois dessa etapa.
 
 ## 7. Metodologia do benchmark
 
+A comparação final é um **benchmark comparativo sequencial na mesma sessão**.
+
 Os dois backends utilizam:
 
 ```text
 mesmos 5 textos
-20 warm-ups
-500 medições
+20 warm-ups por backend
+500 medições por backend
 mesma máquina
-mesmo escopo
+mesma sessão de trabalho
+mesmo escopo de latência
 modelos carregados previamente
 ```
 
@@ -205,31 +208,85 @@ Textos:
 5. Patient with suspected neoplasm undergoing diagnostic investigation.
 ```
 
-A comparação final executa baseline e ONNX na mesma sessão de trabalho para reduzir diferenças causadas pelo ambiente.
+Os backends são executados em blocos sequenciais na mesma sessão. Não há
+alternância A/B entre cada medição nem randomização da ordem de execução.
+
+Essa estratégia reduz diferenças grosseiras de ambiente, mas não elimina
+variações de carga da máquina ao longo do tempo.
 
 ## 8. O que entra na medição
 
-### Baseline
+### Baseline sklearn
 
 O caminho medido corresponde ao comportamento real de `PredictionService`.
 
-### Backend ONNX
-
-O cronômetro inclui:
+Conceitualmente:
 
 ```text
-TF-IDF sklearn
+texto
  ↓
-conversão CSR para float32
+TfidfVectorizer sklearn
+ ↓
+LogisticRegression sklearn
+ ↓
+predict
++
+predict_proba
+```
+
+O serviço sklearn solicita classe e probabilidades por chamadas separadas ao
+pipeline.
+
+### Backend ONNX
+
+O caminho medido corresponde ao comportamento real de
+`OnnxPredictionService`:
+
+```text
+texto
+ ↓
+TfidfVectorizer sklearn
+ ↓
+CSR float64
+ ↓
+conversão para float32
  ↓
 conversão para tensor denso
  ↓
 ONNX Runtime
+ ↓
+classe + probabilidades
 ```
 
-A conversão para denso não foi retirada da medição porque faz parte do caminho real de inferência otimizado.
+O ONNX Runtime retorna classe e probabilidades em uma única execução.
 
-## 9. Resultados pareados finais
+A conversão da matriz esparsa para representação densa permanece dentro da
+medição porque faz parte do caminho real necessário para esse backend.
+
+Consequentemente, o benchmark compara os dois **serviços de inferência
+implementados**, e não apenas o custo computacional isolado de
+`LogisticRegression` sklearn contra ONNX Runtime.
+
+### Limitações metodológicas
+
+A interpretação dos resultados deve considerar:
+
+- execução sequencial dos backends;
+- ausência de alternância A/B;
+- ausência de randomização da ordem;
+- ausência de persistência das amostras individuais de latência;
+- ausência de intervalo de confiança ou outra estimativa formal de incerteza;
+- possíveis variações de carga da máquina durante a execução;
+- diferenças no caminho de obtenção de classe e probabilidades;
+- custos distintos de preparação das features após o TF-IDF;
+- throughput calculado a partir do tempo agregado de inferência, não de um
+  teste de carga HTTP concorrente.
+
+Portanto, os resultados demonstram o comportamento observado nesta execução e
+neste ambiente, mas não provam um ganho de performance estável ou universal do
+backend ONNX.
+
+## 9. Resultados comparativos finais
 
 ### Baseline
 
@@ -252,6 +309,10 @@ min        1.368800 ms
 max        19.612500 ms
 throughput 349.616121 req/s
 ```
+
+Os resultados mostram melhora em média, p50 e throughput derivado, mas
+regressão no p95. Dessa forma, não foi observado ganho consistente em toda a
+distribuição de latência.
 
 ## 10. Tabela comparativa
 
@@ -298,7 +359,7 @@ Portanto:
 
 ## 12. Conclusão
 
-O backend ONNX preservou equivalência funcional e apresentou ganho em média e p50 nesta execução pareada, porém não apresentou ganho consistente em toda a distribuição de latência. O p95 piorou de forma relevante e o backend ONNX mostrou maior variabilidade.
+O backend ONNX preservou equivalência funcional e apresentou melhora em média, p50 e throughput derivado nesta execução comparativa sequencial, porém não apresentou ganho consistente em toda a distribuição de latência. O p95 piorou de forma relevante e o backend ONNX mostrou maior variabilidade.
 
 Isso é compatível com as características do modelo:
 

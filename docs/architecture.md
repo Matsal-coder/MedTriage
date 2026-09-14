@@ -791,3 +791,60 @@ Prometheus
   ↓
 Grafana
 ```
+
+## 29. Estratégia de execução e cloud
+
+### Real-time e batch
+
+A inferência operacional principal do MedTriage utiliza processamento
+**real-time** por meio da API REST.
+
+Fluxo principal:
+
+```text
+texto médico
+    ↓
+POST /predict
+    ↓
+backend de inferência
+    ↓
+classificação + probabilidades
+    ↓
+resposta HTTP
+```
+
+O processamento **batch** possui papel complementar e é adequado às etapas
+offline do ciclo de Machine Learning, incluindo:
+
+- preparação e validação de dados;
+- treinamento;
+- retreinamento;
+- avaliação;
+- reprocessamento de dados históricos.
+
+Portanto, batch não é a interface principal de inferência do sistema.
+
+### Referência de cloud
+
+A unidade de deploy do MedTriage é o container Docker. Para uma eventual
+implantação em cloud, o serviço adotado como referência arquitetural é o
+**Google Cloud Run**.
+
+A escolha considera:
+
+- suporte nativo a containers;
+- interface HTTP gerenciada;
+- autoscaling;
+- baixo overhead operacional;
+- adequação ao comportamento stateless da API.
+
+A arquitetura permanece portável e não depende de recursos específicos do
+Google Cloud. Serviços equivalentes incluem:
+
+- Azure Container Apps;
+- AWS App Runner;
+- AWS ECS/Fargate.
+
+O projeto não realizou deploy real em cloud. A decisão é arquitetural e
+demonstra como a solução containerizada entregue localmente poderia ser
+implantada em um ambiente gerenciado sem alterar o contrato da aplicação.

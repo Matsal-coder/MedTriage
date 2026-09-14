@@ -334,7 +334,12 @@ max
 throughput
 ```
 
-## 14. Resultados de latência
+## 14. Benchmark histórico do Bloco 2
+
+A primeira medição de latência do baseline foi realizada durante o Bloco 2,
+antes da etapa final de otimização e comparação com ONNX.
+
+Resultados históricos observados:
 
 ```text
 mean       : 2.2997 ms
@@ -345,7 +350,10 @@ max        : 4.0201 ms
 throughput : 434.84 req/s
 ```
 
-## 15. Ambiente
+Esses valores são preservados como registro histórico do desenvolvimento e
+não devem ser usados como referência para a comparação final com ONNX.
+
+## 15. Ambiente do benchmark histórico
 
 ```text
 Python:
@@ -358,13 +366,29 @@ Processor:
 Intel64 Family 6 Model 69 Stepping 1, GenuineIntel
 ```
 
-## 16. Artefato do benchmark
+## 16. Artefatos de benchmark
+
+O caminho utilizado pelo projeto é:
 
 ```text
 artifacts/benchmarks/baseline_latency.json
 ```
 
-Esse arquivo é gerado localmente e ignorado pelo Git.
+Durante o Bloco 2, esse caminho foi utilizado para persistir a medição
+histórica do baseline.
+
+Na etapa final do Bloco 5, o benchmark foi executado novamente no contexto da
+comparação com ONNX. O arquivo `baseline_latency.json` atualmente versionado
+corresponde a essa medição comparativa final, e não aos números históricos
+registrados na seção anterior.
+
+Os artefatos finais versionados são:
+
+```text
+artifacts/benchmarks/baseline_latency.json
+artifacts/benchmarks/optimized_latency.json
+artifacts/benchmarks/latency_comparison.json
+```
 
 ## 17. Relação com a API
 
@@ -374,21 +398,24 @@ O endpoint `/predict` também retorna:
 inference_time_ms
 ```
 
-Esse valor mede uma chamada individual.
+Esse valor representa a latência observada em uma chamada individual.
 
-Exemplo observado durante smoke test local:
+Exemplo histórico observado durante smoke test local:
 
 ```text
 18.1404 ms
 ```
 
-Esse valor isolado não deve ser comparado diretamente com p50 ou média do benchmark agregado.
+Uma medição isolada não deve ser comparada diretamente com média, p50 ou p95
+de um benchmark agregado com warm-up e centenas de execuções.
 
-O benchmark oficial usa warm-up e 500 medições.
+## 18. Referência final para comparação com ONNX
 
-## 18. Baseline oficial para o Bloco 5
+A comparação oficial final foi produzida no Bloco 5, executando baseline e
+ONNX na mesma sessão de benchmark, com os mesmos textos, quantidade de
+warm-up e número de medições.
 
-Os números que devem ser usados como referência para comparação com ONNX são:
+A referência final do baseline é:
 
 ```text
 MODEL
@@ -398,32 +425,38 @@ QUALITY
 test f1_macro      = 0.5457
 test urgent_recall = 0.7675
 
-LATENCY
-mean       = 2.2997 ms
-p50        = 2.2074 ms
-p95        = 2.8114 ms
-throughput = 434.84 req/s
+FINAL LATENCY REFERENCE
+mean       = 2.958672 ms
+p50        = 2.702200 ms
+p95        = 3.849020 ms
+throughput = 337.989522 req/s
 ```
 
-## 19. Regras para comparação futura
-
-A comparação com a versão otimizada deve preservar, sempre que possível:
-
-- mesmos textos;
-- mesma quantidade de warm-up;
-- mesmo número de medições;
-- mesmo escopo de latência;
-- mesmo ambiente;
-- mesma unidade;
-- mesma estratégia de agregação.
-
-O objetivo é evitar uma comparação injusta entre:
+A fonte normativa para a comparação final de latência é:
 
 ```text
-Scikit-learn baseline
-vs
-ONNX otimizado
+artifacts/benchmarks/baseline_latency.json
+artifacts/benchmarks/optimized_latency.json
+artifacts/benchmarks/latency_comparison.json
 ```
+
+## 19. Regras da comparação final
+
+Baseline e ONNX foram comparados preservando:
+
+- os mesmos 5 textos;
+- 20 execuções de warm-up por backend;
+- 500 medições por backend;
+- o mesmo escopo `model_inference`;
+- a mesma máquina e sessão de trabalho;
+- modelos previamente carregados.
+
+A execução foi **sequencial**: primeiro o benchmark de um backend e depois o
+do outro. Não houve alternância A/B nem randomização da ordem.
+
+A comparação mede os serviços de inferência implementados e não isola
+perfeitamente o custo puro dos runtimes.
+
 
 ## 20. Conclusão
 

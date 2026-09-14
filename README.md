@@ -711,21 +711,26 @@ Os testes de equivalência passaram integralmente.
 
 ## Benchmark de latência
 
-Metodologia oficial:
+A comparação final utiliza um **benchmark comparativo sequencial na mesma
+sessão**, usando os mesmos textos, warm-up e número de execuções para os dois
+backends.
+
+Configuração:
 
 ```text
 escopo: model_inference
 inputs: 5 textos fixos
-warm-up: 20 execuções
-medições: 500
+warm-up: 20 execuções por backend
+medições: 500 por backend
 mesma máquina
-mesmo preprocessing
-modelo carregado previamente
+mesma sessão de trabalho
+modelos carregados previamente
 ```
 
-Para reduzir efeitos de ambiente, a comparação final executa baseline e backend ONNX de forma pareada no mesmo ambiente.
+A execução é sequencial: os backends são medidos em blocos separados, e não
+por alternância A/B a cada input.
 
-### Resultado pareado final
+### Resultado comparativo final
 
 | Métrica | Baseline sklearn | Backend ONNX |
 |---|---:|---:|
@@ -756,17 +761,54 @@ Interpretação:
 - `= 1.0x`: equivalência;
 - `< 1.0x`: otimizado mais lento.
 
+### Limitações metodológicas
+
+A comparação deve ser interpretada considerando que:
+
+- baseline e ONNX são executados sequencialmente;
+- não existe alternância A/B entre as medições;
+- a ordem dos backends não é randomizada;
+- as amostras individuais de latência não são persistidas;
+- não foi calculada estimativa formal de incerteza;
+- throughput é derivado da latência média de inferência e não representa um
+  teste de carga HTTP;
+- o backend sklearn executa `predict` e `predict_proba` separadamente;
+- o backend ONNX retorna classe e probabilidades na mesma execução do runtime;
+- os dois caminhos compartilham o `TfidfVectorizer` treinado, mas possuem custos
+  diferentes após essa etapa;
+- portanto, a comparação representa os serviços implementados e não isola
+  perfeitamente o ganho puro do ONNX Runtime.
+
 ## Resultado da otimização
 
-O ONNX foi aplicado e validado funcionalmente. Na execução pareada final, apresentou pequena melhora na média e no p50, mas piorou de forma relevante o p95 e mostrou maior variabilidade de latência.
+O ONNX foi convertido com sucesso e sua equivalência funcional com o
+classificador sklearn foi validada.
 
-A principal explicação arquitetural é que a regressão logística original já possui baixo custo computacional, enquanto o backend ONNX precisa converter a saída esparsa do TF-IDF para um tensor denso `float32` de alta dimensionalidade.
+Na comparação sequencial final, o backend ONNX apresentou:
 
-Portanto, neste cenário específico, o ganho potencial do runtime ONNX compete diretamente com o custo adicional de preparação do tensor.
+- melhora na média;
+- melhora no p50;
+- melhora no throughput derivado;
+- piora relevante no p95;
+- maior variabilidade nas medições observadas.
 
-Como o resultado não demonstrou ganho consistente em toda a distribuição de latência, a API final permanece utilizando o backend sklearn. A implementação ONNX é mantida como alternativa validada, entregue e benchmarkada.
+A principal explicação arquitetural é que a regressão logística original já
+possui baixo custo computacional, enquanto o backend ONNX precisa converter a
+saída esparsa do TF-IDF para um tensor denso `float32` de alta dimensionalidade.
 
-Os resultados foram preservados e documentados sem manipulação do benchmark.
+Portanto, neste cenário específico, o ganho potencial do runtime ONNX compete
+diretamente com o custo adicional de preparação do tensor.
+
+O resultado observado não demonstra benefício consistente em toda a
+distribuição de latência e não deve ser generalizado como vantagem universal
+do ONNX.
+
+Por esse motivo, a API final permanece utilizando o backend sklearn. A
+implementação ONNX é mantida como alternativa validada, entregue e
+benchmarkada.
+
+Os resultados foram preservados e documentados sem seleção de medições
+favoráveis.
 
 ## Artefatos de benchmark
 
@@ -821,19 +863,52 @@ O comando executa baseline e ONNX no mesmo ambiente e gera os artefatos de compa
 
 ## Decisão de cloud
 
-O objetivo do projeto é demonstrar arquitetura MLOps reproduzível e containerizada.
+A inferência operacional principal do MedTriage é **real-time**, exposta por meio
+da API REST `POST /predict`. Esse padrão é adequado ao cenário em que um texto
+é submetido ao serviço e a classificação deve ser devolvida imediatamente.
 
-A aplicação foi estruturada de forma portável via Docker, podendo ser adaptada a um ambiente cloud, mas a entrega atual prioriza execução local/reproduzível.
+O processamento **batch** permanece como estratégia complementar para tarefas
+offline, como:
+
+- preparação e validação de dados;
+- treinamento e retreinamento;
+- avaliação;
+- reprocessamento de dados históricos;
+- outras etapas do pipeline que não exigem resposta síncrona.
+
+A aplicação é empacotada como container Docker e permanece stateless no caminho
+de inferência. Como referência arquitetural de cloud, foi escolhido o
+**Google Cloud Run**, principalmente por oferecer:
+
+- execução nativa de containers;
+- exposição HTTP gerenciada;
+- autoscaling;
+- baixo overhead operacional;
+- boa adequação a aplicações stateless.
+
+Essa escolha não cria dependência técnica do Google Cloud. A mesma arquitetura
+containerizada pode ser adaptada para serviços equivalentes, como:
+
+- Azure Container Apps;
+- AWS App Runner;
+- AWS ECS/Fargate.
+
+O deploy real em cloud **não foi executado neste Tech Challenge e não faz parte
+dos requisitos da entrega**. A implementação entregue e validada utiliza
+execução local/containerizada, mantendo portabilidade para uma implantação
+futura em cloud.
 
 ## Vídeo STAR
 
 O vídeo final deve apresentar:
 
 ### Situation
+
 - problema de classificação acadêmica de urgência em textos médicos;
 - necessidade de servir o modelo com baixa latência e observabilidade.
 
 ### Task
+
 - treinar e servir o modelo;
 - automatizar validações;
 - orquestrar pipeline;
@@ -841,6 +916,7 @@ O vídeo final deve apresentar:
 - avaliar otimização de performance.
 
 ### Action
+
 - TF-IDF + Logistic Regression;
 - FastAPI;
 - Docker;
@@ -849,16 +925,19 @@ O vídeo final deve apresentar:
 - Prometheus;
 - Grafana;
 - ONNX Runtime;
-- benchmark comparativo.
+- benchmark comparativo sequencial de latência.
 
 ### Result
+
 - pipeline reproduzível;
 - API funcional;
 - CI verde;
 - observabilidade completa;
 - equivalência ONNX validada;
-- benchmark pareado;
-- ganho em média/p50, regressão no p95 e ausência de ganho consistente documentados com transparência.
+- benchmark comparativo sequencial executado na mesma sessão;
+- melhora observada em média, p50 e throughput;
+- regressão no p95;
+- ausência de ganho consistente em toda a distribuição documentada com transparência.
 
 Link do vídeo:
 
