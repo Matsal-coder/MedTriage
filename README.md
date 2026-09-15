@@ -10,7 +10,7 @@ O objetivo é construir uma solução de MLOps para classificação acadêmica d
 
 ## Status do projeto
 
-O projeto está na etapa final do BLOCO 5 — otimização com ONNX, benchmark comparativo e documentação final.
+O projeto está concluído e pronto para entrega, com os principais componentes de MLOps implementados, testados e documentados.
 
 Principais componentes implementados:
 
@@ -44,8 +44,6 @@ Principais componentes implementados:
 - benchmark comparativo de latência;
 - cálculo de speedup;
 - 89 testes automatizados.
-
-MLflow foi deliberadamente excluído da arquitetura deste projeto.
 
 ## Stack
 
